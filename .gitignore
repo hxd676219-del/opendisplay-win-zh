@@ -1,0 +1,16 @@
+# 构建产物
+build/
+out/
+Debug/
+Release/
+x64/
+*.obj
+*.pdb
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# 本地日志
+*.log

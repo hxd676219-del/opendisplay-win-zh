@@ -1,0 +1,72 @@
+#include <windows.h>
+#include "resources.h"
+
+// 本文件为 UTF-8；不声明代码页时资源编译器会按系统 ANSI 代码页读取，
+// 所有非 ASCII 字符都会变成乱码。
+#pragma code_page(65001)
+
+// 带选项卡的设置对话框：常规（附近的 iPad | 添加/移除 | 我的 iPad）+ 高级。
+// SysTabControl32 填充 OK/Cancel 上方的内容区；TrayApp.cpp 用
+// TCM_ADJUSTRECT 把各页控件摆到显示矩形内。
+// OK/Cancel 位于选项卡下方。固定尺寸。
+IDD_SETTINGS DIALOGEX 0, 0, 340, 294
+STYLE DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "OpenDisplay - 设置"
+FONT 9, "Microsoft YaHei UI"
+BEGIN
+    CONTROL         "", IDC_SETTINGS_TABS, "SysTabControl32", WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | WS_TABSTOP, 8, 6, 324, 262
+
+    // --- 常规选项卡 ---
+    LTEXT           "先在 iPad 上打开 OpenDisplay，并让两台设备处于同一 Wi-Fi。", IDC_LEAD_HINT, 16, 34, 308, 10
+
+    GROUPBOX        "附近的 iPad", IDC_NEARBY_GROUP, 16, 48, 118, 100
+    LISTBOX         IDC_NEARBY, 22, 60, 106, 64, LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "刷新", IDC_REFRESH_NEARBY, 22, 128, 48, 14
+    LTEXT           "", IDC_NEARBY_HINT, 16, 152, 308, 10
+
+    PUSHBUTTON      "添加 >", IDC_ADD_NEARBY, 142, 76, 56, 14
+    PUSHBUTTON      "< 移除", IDC_REMOVE_SAVED, 142, 96, 56, 14
+
+    GROUPBOX        "我的 iPad", IDC_SAVED_GROUP, 206, 48, 118, 100
+    LISTBOX         IDC_SAVED, 212, 60, 106, 82, LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+
+    GROUPBOX        "连接", IDC_CONNECTION_GROUP, 16, 166, 308, 54
+    AUTOCHECKBOX    "OpenDisplay 运行时自动连接", IDC_AUTORECONNECT, 24, 178, 292, 10
+    AUTOCHECKBOX    "USB 线断开时改用 Wi-Fi 保持连接", IDC_USB_WIFI_FAILOVER, 24, 190, 292, 10
+    AUTOCHECKBOX    "开机自动启动", IDC_AUTOSTART, 24, 202, 292, 10
+
+    GROUPBOX        "画质", IDC_QUALITY_GROUP, 16, 224, 308, 40
+    LTEXT           "传输画质：", IDC_QUALITY_LABEL, 24, 238, 100, 10
+    COMBOBOX        IDC_PICTURE_PRESET, 130, 236, 184, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+
+    // --- 高级选项卡（同一区域，随选项卡选择显示/隐藏） ---
+    GROUPBOX        "手动添加 / 重命名", IDC_ADV_MANUAL_GROUP, 16, 34, 308, 70
+    LTEXT           "每行一台：先写地址，后面可跟一个昵称。", IDC_ADV_MANUAL_HINT, 24, 46, 292, 10
+    EDITTEXT        IDC_DEVICES, 24, 58, 292, 30, ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "示例：192.168.1.42 客厅", IDC_ADV_MANUAL_EXAMPLE, 24, 90, 292, 10
+
+    LTEXT           "端口：", IDC_ADV_PORT_LABEL, 24, 112, 32, 10
+    EDITTEXT        IDC_PORT, 58, 110, 50, 13, ES_AUTOHSCROLL | ES_NUMBER | WS_TABSTOP
+    LTEXT           "显示驱动：", IDC_ADV_BACKEND_LABEL, 136, 112, 50, 10
+    COMBOBOX        IDC_DISPLAY_BACKEND, 190, 110, 126, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+
+    AUTOCHECKBOX    "USB 与 Wi-Fi 分别设置画质", IDC_SEPARATE_USB_WIFI, 24, 128, 292, 10
+
+    LTEXT           "USB", IDC_ADV_USB_LABEL, 24, 146, 40, 10
+    LTEXT           "模式：", IDC_ADV_USB_MODE_LABEL, 24, 160, 32, 10
+    COMBOBOX        IDC_USB_ENCODE_MODE, 58, 158, 104, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "预设：", IDC_ADV_USB_PRESET_LABEL, 172, 160, 36, 10
+    COMBOBOX        IDC_USB_ENCODE_PRESET, 210, 158, 106, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+
+    LTEXT           "Wi-Fi", IDC_ADV_WIFI_LABEL, 24, 178, 40, 10
+    LTEXT           "模式：", IDC_ADV_WIFI_MODE_LABEL, 24, 192, 32, 10
+    COMBOBOX        IDC_WIFI_ENCODE_MODE, 58, 190, 104, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "预设：", IDC_ADV_WIFI_PRESET_LABEL, 172, 192, 36, 10
+    COMBOBOX        IDC_WIFI_ENCODE_PRESET, 210, 190, 106, 60, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+
+    PUSHBUTTON      "以管理员身份重启", IDC_RESTART_ADMIN, 24, 214, 140, 14
+    LTEXT           "只有两种情况需要管理员权限：让触摸能操作管理员权限窗口，以及首次注册新 iPad 的分辨率（Windows 可能会弹窗确认）。", IDC_ADMIN_NOTE, 24, 232, 292, 28
+
+    DEFPUSHBUTTON   "确定", IDOK, 224, 276, 50, 14
+    PUSHBUTTON      "取消", IDCANCEL, 282, 276, 50, 14
+END
