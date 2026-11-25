@@ -1,9 +1,52 @@
 #include <windows.h>
 #include "resources.h"
+#include "Version.h"
 
 // 本文件为 UTF-8；不声明代码页时资源编译器会按系统 ANSI 代码页读取，
 // 所有非 ASCII 字符都会变成乱码。
 #pragma code_page(65001)
+
+/////////////////////////////////////////////////////////////////////////////
+// 版本信息：让 exe 文件属性页显示产品名、版本、描述与许可证，
+// 也便于脚本/用户通过 FileVersion 识别当前版本（v1.0.1）。
+#define OD_STR2(x) #x
+#define OD_STR(x) OD_STR2(x)
+#define OD_VERSION_NUM OD_VERSION_MAJOR,OD_VERSION_MINOR,OD_VERSION_PATCH,OD_VERSION_BUILD
+#define OD_VERSION_NUM_STR OD_STR(OD_VERSION_MAJOR) "." OD_STR(OD_VERSION_MINOR) "." OD_STR(OD_VERSION_PATCH) "." OD_STR(OD_VERSION_BUILD)
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION OD_VERSION_NUM
+ PRODUCTVERSION OD_VERSION_NUM
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "CompanyName", "HXD676219-del"
+            VALUE "FileDescription", "OpenDisplay-Win-ZH (iPad 作为 Windows 副屏，中文版)"
+            VALUE "FileVersion", OD_VERSION_NUM_STR
+            VALUE "InternalName", "opendisplay-win"
+            VALUE "LegalCopyright", "GPL-3.0-or-later; 派生自 martinhoess/opendisplay-win (GPL-3.0)"
+            VALUE "OriginalFilename", "opendisplay-win-zh.exe"
+            VALUE "ProductName", "OpenDisplay-Win-ZH"
+            VALUE "ProductVersion", OD_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END
+
 
 // 带选项卡的设置对话框：常规（附近的 iPad | 添加/移除 | 我的 iPad）+ 高级。
 // SysTabControl32 填充 OK/Cancel 上方的内容区；TrayApp.cpp 用

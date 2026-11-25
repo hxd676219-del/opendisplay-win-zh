@@ -4,6 +4,7 @@
 #include "app/Log.h"
 #include "app/PauseSignals.h"
 #include "app/SenderApp.h"
+#include "app/Version.h"
 #include "app/resources.h"
 #include "display/MttVddSettings.h"
 #include "net/Mdns.h"
@@ -1423,6 +1424,8 @@ int RunTray(HINSTANCE hInstance)
         CloseHandle(trayMutex);
         return 0;
     }
+
+    Logf("tray", "OpenDisplay-Win-ZH v%s starting\n", OD_VERSION_STRING);
 
     INITCOMMONCONTROLSEX icc{sizeof(icc), ICC_TAB_CLASSES};
     InitCommonControlsEx(&icc);
