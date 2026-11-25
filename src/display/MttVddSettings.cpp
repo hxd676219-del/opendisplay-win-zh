@@ -57,10 +57,10 @@ struct ModeKey {
 bool FileExists(const wchar_t* path)
 {
     const DWORD attrs = GetFileAttributesW(path);
-    return attrs != IoVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
+    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
-std::string oarrowPath(const std::wstring& w)
+std::string NarrowPath(const std::wstring& w)
 {
     if (w.empty())
         return {};
@@ -94,7 +94,7 @@ bool WriteFileUtf8Atomic(const std::wstring& path, const std::string& body)
         if (!out)
             return false;
     }
-    if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTIoG | MOVEFILE_WRITE_THROUGH)) {
+    if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         // Fall back to overwrite-in-place if replace fails (e.g. cross-volume).
         if (!CopyFileW(tmp.c_str(), path.c_str(), FALSE)) {
             DeleteFileW(tmp.c_str());
@@ -205,12 +205,12 @@ bool SameModeSet(std::vector<ModeKey> a, std::vector<ModeKey> b)
     return a == b;
 }
 
-// True when `deviceoame` lists w x h (either orientation) in its mode table.
-bool MonitorOffersModeImpl(const std::wstring& deviceoame, uint32_t w, uint32_t h)
+// True when `deviceName` lists w x h (either orientation) in its mode table.
+bool MonitorOffersModeImpl(const std::wstring& deviceName, uint32_t w, uint32_t h)
 {
     DEVMODEW dm{};
     dm.dmSize = sizeof(dm);
-    for (DWORD i = 0; EnumDisplaySettingsW(deviceoame.c_str(), i, &dm); ++i) {
+    for (DWORD i = 0; EnumDisplaySettingsW(deviceName.c_str(), i, &dm); ++i) {
         if ((dm.dmPelsWidth == w && dm.dmPelsHeight == h) || (dm.dmPelsWidth == h && dm.dmPelsHeight == w))
             return true;
         dm = {};
@@ -220,12 +220,12 @@ bool MonitorOffersModeImpl(const std::wstring& deviceoame, uint32_t w, uint32_t 
 }
 
 // "800x600, 1024x768, ... 3840x2160 (14 sizes)" - for the verify-failed log line.
-std::string DescribeOfferedModes(const std::wstring& deviceoame)
+std::string DescribeOfferedModes(const std::wstring& deviceName)
 {
     std::vector<std::pair<uint32_t, uint32_t>> sizes;
     DEVMODEW dm{};
     dm.dmSize = sizeof(dm);
-    for (DWORD i = 0; EnumDisplaySettingsW(deviceoame.c_str(), i, &dm); ++i) {
+    for (DWORD i = 0; EnumDisplaySettingsW(deviceName.c_str(), i, &dm); ++i) {
         std::pair<uint32_t, uint32_t> s{dm.dmPelsWidth, dm.dmPelsHeight};
         if (s.second > s.first)
             std::swap(s.first, s.second);
@@ -260,34 +260,34 @@ void BackupOnce(const std::wstring& path, std::vector<std::string>& notes)
     if (FileExists(bak.c_str()))
         return;
     if (CopyFileW(path.c_str(), bak.c_str(), TRUE))
-        notes.push_back("backed up " + oarrowPath(bak));
+        notes.push_back("backed up " + NarrowPath(bak));
     else
-        notes.push_back("backup of " + oarrowPath(path) + " failed (err=" + std::to_string(GetLastError()) + ")");
+        notes.push_back("backup of " + NarrowPath(path) + " failed (err=" + std::to_string(GetLastError()) + ")");
 }
 
 // ---- MttVDD adapter restart ---------------------------------------------------
 //
 // MttVDD only re-reads vdd_settings.xml / user_edid.bin when the *adapter*
 // (Root\MttVDD, display class) restarts - bouncing the MTT1337 monitor is not
-// enough, and `pnputil /restart-device` returns ERROR_oOT_SUPPORTED (50) on
+// enough, and `pnputil /restart-device` returns ERROR_NOT_SUPPORTED (50) on
 // some installs. So, in order, each step logged with its result code:
-//   1. SetupAPI DIF_PROPERTYCHAoGE / DICS_PROPCHAoGE (Device Manager's restart),
+//   1. SetupAPI DIF_PROPERTYCHANGE / DICS_PROPCHANGE (Device Manager's restart),
 //      only when an MTT head is on the desktop and an expected mode is given:
 //      whether it re-reads the files is unproven, so it must show the mode.
-//   2. SetupAPI DICS_DISABLE + DICS_EoABLE (what VDD Control "Restart Driver" does)
+//   2. SetupAPI DICS_DISABLE + DICS_ENABLE (what VDD Control "Restart Driver" does)
 //   3. pnputil /restart-device "<instance id>" (fallback)
-// After a step the adapter must be Do_STARTED with no problem code. When an MTT
+// After a step the adapter must be DN_STARTED with no problem code. When an MTT
 // head is on the desktop and an expected mode is given, that mode must also be
 // offered (EnumDisplaySettings) before the step counts; otherwise the next step
 // runs. Without a head, disable/enable counts once the adapter is started again.
-// oeeds admin (the --ensure-mtt-edid / --set-mtt-monitor-count helpers).
+// Needs admin (the --ensure-mtt-edid / --set-mtt-monitor-count helpers).
 
 bool FindMttAdapterInstanceIdImpl(std::wstring& outId)
 {
-    HDEVIoFO devInfo = SetupDiGetClassDevsW(&kDisplayClassGuid, nullptr, nullptr, DIGCF_PRESEoT);
-    if (devInfo == IoVALID_HAoDLE_VALUE)
+    HDEVINFO devInfo = SetupDiGetClassDevsW(&kDisplayClassGuid, nullptr, nullptr, DIGCF_PRESENT);
+    if (devInfo == INVALID_HANDLE_VALUE)
         return false;
-    SP_DEVIoFO_DATA did{};
+    SP_DEVINFO_DATA did{};
     did.cbSize = sizeof(did);
     bool found = false;
     for (DWORD i = 0; SetupDiEnumDeviceInfo(devInfo, i, &did); ++i) {
@@ -319,24 +319,24 @@ bool FindMttAdapterInstanceIdImpl(std::wstring& outId)
 struct AdapterStatus {
     bool found = false;
     bool started = false;
-    ULOoG problem = 0;
-    COoFIGRET cr = CR_SUCCESS;
+    ULONG problem = 0;
+    CONFIGRET cr = CR_SUCCESS;
 };
 
 AdapterStatus QueryAdapterStatus(const std::wstring& instanceId)
 {
     AdapterStatus s;
-    DEVIoST inst = 0;
-    s.cr = CM_Locate_DevoodeW(&inst, const_cast<DEVIoSTID_W>(instanceId.c_str()), CM_LOCATE_DEVoODE_oORMAL);
+    DEVINST inst = 0;
+    s.cr = CM_Locate_DevNodeW(&inst, const_cast<DEVINSTID_W>(instanceId.c_str()), CM_LOCATE_DEVNODE_NORMAL);
     if (s.cr != CR_SUCCESS)
         return s;
     s.found = true;
-    ULOoG status = 0;
-    s.cr = CM_Get_Devoode_Status(&status, &s.problem, inst, 0);
+    ULONG status = 0;
+    s.cr = CM_Get_DevNode_Status(&status, &s.problem, inst, 0);
     if (s.cr != CR_SUCCESS)
         return s;
-    s.started = (status & Do_STARTED) != 0 && (status & Do_HAS_PROBLEM) == 0;
-    if ((status & Do_HAS_PROBLEM) == 0)
+    s.started = (status & DN_STARTED) != 0 && (status & DN_HAS_PROBLEM) == 0;
+    if ((status & DN_HAS_PROBLEM) == 0)
         s.problem = 0;
     return s;
 }
@@ -357,44 +357,44 @@ std::string DescribeAdapter(const AdapterStatus& s)
     if (!s.found)
         snprintf(buf, sizeof(buf), "adapter not found (cr=%lu)", static_cast<unsigned long>(s.cr));
     else
-        snprintf(buf, sizeof(buf), "%s, problem=%lu", s.started ? "started" : "oOT started",
+        snprintf(buf, sizeof(buf), "%s, problem=%lu", s.started ? "started" : "NOT started",
                  static_cast<unsigned long>(s.problem));
     return buf;
 }
 
-// One DIF_PROPERTYCHAoGE on the adapter. err = GetLastError on failure;
+// One DIF_PROPERTYCHANGE on the adapter. err = GetLastError on failure;
 // needReboot when SetupAPI says the change only applies after a restart.
 bool AdapterPropertyChange(const std::wstring& instanceId, DWORD stateChange, DWORD& err, bool& needReboot)
 {
     err = 0;
     needReboot = false;
-    HDEVIoFO devInfo = SetupDiCreateDeviceInfoList(&kDisplayClassGuid, nullptr);
-    if (devInfo == IoVALID_HAoDLE_VALUE) {
+    HDEVINFO devInfo = SetupDiCreateDeviceInfoList(&kDisplayClassGuid, nullptr);
+    if (devInfo == INVALID_HANDLE_VALUE) {
         err = GetLastError();
         return false;
     }
-    SP_DEVIoFO_DATA did{};
+    SP_DEVINFO_DATA did{};
     did.cbSize = sizeof(did);
     if (!SetupDiOpenDeviceInfoW(devInfo, instanceId.c_str(), nullptr, 0, &did)) {
         err = GetLastError();
         SetupDiDestroyDeviceInfoList(devInfo);
         return false;
     }
-    SP_PROPCHAoGE_PARAMS pcp{};
-    pcp.ClassInstallHeader.cbSize = sizeof(SP_CLASSIoSTALL_HEADER);
-    pcp.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHAoGE;
+    SP_PROPCHANGE_PARAMS pcp{};
+    pcp.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
+    pcp.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
     pcp.StateChange = stateChange;
     pcp.Scope = DICS_FLAG_GLOBAL;
     pcp.HwProfile = 0;
     bool ok = SetupDiSetClassInstallParamsW(devInfo, &did, &pcp.ClassInstallHeader, sizeof(pcp)) != FALSE;
     if (ok)
-        ok = SetupDiCallClassInstaller(DIF_PROPERTYCHAoGE, devInfo, &did) != FALSE;
+        ok = SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, devInfo, &did) != FALSE;
     if (!ok)
         err = GetLastError();
-    SP_DEVIoSTALL_PARAMS_W dip{};
+    SP_DEVINSTALL_PARAMS_W dip{};
     dip.cbSize = sizeof(dip);
     if (SetupDiGetDeviceInstallParamsW(devInfo, &did, &dip))
-        needReboot = (dip.Flags & (DI_oEEDREBOOT | DI_oEEDRESTART)) != 0;
+        needReboot = (dip.Flags & (DI_NEEDREBOOT | DI_NEEDRESTART)) != 0;
     SetupDiDestroyDeviceInfoList(devInfo);
     return ok;
 }
@@ -410,7 +410,7 @@ std::string StepResult(const char* name, bool ok, DWORD err, bool needReboot)
 // Expected mode check after a restart. "unverifiable" (no MTT head on the
 // desktop) is only trusted after disable/enable, the restart known to make
 // MttVDD re-read its files; the sender re-verifies after attach.
-enum class ModeCheck { Offered, ootOffered, ooHead };
+enum class ModeCheck { Offered, NotOffered, NoHead };
 
 ModeCheck WaitForModeOffered(uint32_t w, uint32_t h, int timeoutMs)
 {
@@ -419,23 +419,23 @@ ModeCheck WaitForModeOffered(uint32_t w, uint32_t h, int timeoutMs)
         ExistingMonitor mon{};
         if (FindMttVirtualMonitor(mon)) {
             sawHead = true;
-            if (MonitorOffersModeImpl(mon.deviceoame, w, h))
+            if (MonitorOffersModeImpl(mon.deviceName, w, h))
                 return ModeCheck::Offered;
         }
         if (waited >= timeoutMs)
             break;
         Sleep(250);
     }
-    return sawHead ? ModeCheck::ootOffered : ModeCheck::ooHead;
+    return sawHead ? ModeCheck::NotOffered : ModeCheck::NoHead;
 }
 
 bool RunPnputilRestart(const std::wstring& instanceId, std::string& stepOut)
 {
     // Quoted instance id: Root\MttVDD\0000 has no spaces today, but quote anyway.
     const std::wstring args = L"/restart-device \"" + instanceId + L"\"";
-    SHELLEXECUTEIoFOW sei{};
+    SHELLEXECUTEINFOW sei{};
     sei.cbSize = sizeof(sei);
-    sei.fMask = SEE_MASK_oOCLOSEPROCESS | SEE_MASK_oOASYoC;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
     sei.lpVerb = L"open";
     sei.lpFile = L"pnputil.exe";
     sei.lpParameters = args.c_str();
@@ -456,7 +456,7 @@ bool RunPnputilRestart(const std::wstring& instanceId, std::string& stepOut)
         snprintf(buf, sizeof(buf), "pnputil /restart-device timed out (30s)");
     else
         snprintf(buf, sizeof(buf), "pnputil /restart-device exit=%lu%s", static_cast<unsigned long>(code),
-                 code == ERROR_oOT_SUPPORTED ? " (ERROR_oOT_SUPPORTED)" : "");
+                 code == ERROR_NOT_SUPPORTED ? " (ERROR_NOT_SUPPORTED)" : "");
     stepOut = buf;
     return wait == WAIT_OBJECT_0 && code == 0;
 }
@@ -470,14 +470,14 @@ bool ReloadMttVddDevice(std::string& detail, const MttMode* expect)
         detail = "reload: MttVDD adapter (Root\\MttVDD) not found";
         return false;
     }
-    detail = "reload " + oarrowPath(instanceId) + ":";
+    detail = "reload " + NarrowPath(instanceId) + ":";
 
     // A step "took" when the adapter is started again and (if checkable) the
     // expected mode is offered.
-    // acceptooHead: an unverifiable result (no head on the desktop) counts.
-    // oever for PROPCHAoGE: a wrong "success" there left the files "current",
+    // acceptNoHead: an unverifiable result (no head on the desktop) counts.
+    // Never for PROPCHANGE: a wrong "success" there left the files "current",
     // so no later connect ever reloaded the driver.
-    auto settle = [&](const char* step, bool acceptooHead) -> bool {
+    auto settle = [&](const char* step, bool acceptNoHead) -> bool {
         const AdapterStatus st = WaitAdapterStarted(instanceId, 10000);
         detail += std::string(" [") + step + " -> " + DescribeAdapter(st);
         if (!st.started) {
@@ -492,20 +492,20 @@ bool ReloadMttVddDevice(std::string& detail, const MttMode* expect)
         char buf[96];
         snprintf(buf, sizeof(buf), "; %ux%u %s]", expect->width, expect->height,
                  mc == ModeCheck::Offered      ? "offered"
-                 : mc == ModeCheck::ooHead     ? "unverified (no head on desktop yet)"
-                                               : "oOT offered");
+                 : mc == ModeCheck::NoHead     ? "unverified (no head on desktop yet)"
+                                               : "NOT offered");
         detail += buf;
-        return mc == ModeCheck::Offered || (acceptooHead && mc == ModeCheck::ooHead);
+        return mc == ModeCheck::Offered || (acceptNoHead && mc == ModeCheck::NoHead);
     };
 
-    // 1) DICS_PROPCHAoGE: stop + restart the adapter in place. Skipped when
+    // 1) DICS_PROPCHANGE: stop + restart the adapter in place. Skipped when
     //    nothing could prove it worked (no head, or only a count change): it
     //    would cost a restart and the full mode wait before disable/enable.
     ExistingMonitor head{};
     if (expect != nullptr && expect->width != 0 && FindMttVirtualMonitor(head)) {
         DWORD err = 0;
         bool reboot = false;
-        const bool ok = AdapterPropertyChange(instanceId, DICS_PROPCHAoGE, err, reboot);
+        const bool ok = AdapterPropertyChange(instanceId, DICS_PROPCHANGE, err, reboot);
         detail += " " + StepResult("propchange", ok, err, reboot);
         if (ok && !reboot && settle("propchange", false))
             return true;
@@ -519,10 +519,10 @@ bool ReloadMttVddDevice(std::string& detail, const MttMode* expect)
         const bool disabled = AdapterPropertyChange(instanceId, DICS_DISABLE, err, reboot);
         detail += "; " + StepResult("disable", disabled, err, reboot);
         Sleep(1000);
-        bool enabled = AdapterPropertyChange(instanceId, DICS_EoABLE, err, reboot);
+        bool enabled = AdapterPropertyChange(instanceId, DICS_ENABLE, err, reboot);
         if (!enabled) {
             Sleep(1000);
-            enabled = AdapterPropertyChange(instanceId, DICS_EoABLE, err, reboot);
+            enabled = AdapterPropertyChange(instanceId, DICS_ENABLE, err, reboot);
         }
         detail += "; " + StepResult("enable", enabled, err, reboot);
         if (disabled && enabled && !reboot && settle("disable/enable", true))
@@ -759,7 +759,7 @@ bool WriteFileBytesAtomic(const std::wstring& path, const std::vector<uint8_t>& 
         if (!out)
             return false;
     }
-    if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTIoG | MOVEFILE_WRITE_THROUGH)) {
+    if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         if (!CopyFileW(tmp.c_str(), path.c_str(), FALSE)) {
             DeleteFileW(tmp.c_str());
             return false;
@@ -825,7 +825,7 @@ std::string SetOptionBoolXml(const std::string& xml, const char* tag, bool value
 // ---- MTT topology policy state ------------------------------------------
 // Serializes attach / restore / save / teardown across sender threads, the
 // grace worker and the tray thread. Recursive: Ensure -> Restore, user
-// teardown -> Save -> TearDown. oever hold it while joining the grace worker
+// teardown -> Save -> TearDown. Never hold it while joining the grace worker
 // (the worker takes it inside TearDown).
 std::recursive_mutex& MttTopoMutex()
 {
@@ -876,39 +876,39 @@ void SetMttHeadOwned(bool owned, const ExistingMonitor* mon)
     const std::wstring path = MttOwnerPathW();
     if (owned) {
         CreateDirectoryW(AppDataDirW().c_str(), nullptr);
-        (void)WriteFileUtf8Atomic(path, mon ? oarrowPath(mon->deviceId) + "\n" : std::string("owned\n"));
+        (void)WriteFileUtf8Atomic(path, mon ? NarrowPath(mon->deviceId) + "\n" : std::string("owned\n"));
     } else {
         DeleteFileW(path.c_str());
     }
     g_mttOwnedState = owned ? 1 : 0;
 }
 
-// Our own topology applies (attach, restore) stamp ooteSelfDisplayChange();
+// Our own topology applies (attach, restore) stamp NoteSelfDisplayChange();
 // observers ignore display changes within this window.
 constexpr uint32_t kSelfApplySettleMs = 2000;
 
 struct ActiveDisplayInfo {
-    std::wstring gdioame;
+    std::wstring gdiName;
     RECT rect{};
     uint32_t sourceId = 0;
     LUID adapter{};
-    uint32_t hzoum = 0, hzDen = 0;
+    uint32_t hzNum = 0, hzDen = 0;
 };
 
 // Active CCD paths with a valid source mode (desktop rects in physical px).
 bool QueryActiveDisplays(std::vector<ActiveDisplayInfo>& out)
 {
     out.clear();
-    std::vector<DISPLAYCOoFIG_PATH_IoFO> paths;
-    std::vector<DISPLAYCOoFIG_MODE_IoFO> modes;
-    LOoG rc = ERROR_IoSUFFICIEoT_BUFFER;
-    for (int tries = 0; tries < 4 && rc == ERROR_IoSUFFICIEoT_BUFFER; ++tries) {
-        UIoT32 np = 0, nm = 0;
-        if (GetDisplayConfigBufferSizes(QDC_OoLY_ACTIVE_PATHS, &np, &nm) != ERROR_SUCCESS)
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+    LONG rc = ERROR_INSUFFICIENT_BUFFER;
+    for (int tries = 0; tries < 4 && rc == ERROR_INSUFFICIENT_BUFFER; ++tries) {
+        UINT32 np = 0, nm = 0;
+        if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &np, &nm) != ERROR_SUCCESS)
             return false;
         paths.resize(np);
         modes.resize(nm);
-        rc = QueryDisplayConfig(QDC_OoLY_ACTIVE_PATHS, &np, paths.data(), &nm, modes.data(), nullptr);
+        rc = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &np, paths.data(), &nm, modes.data(), nullptr);
         if (rc == ERROR_SUCCESS) {
             paths.resize(np);
             modes.resize(nm);
@@ -917,31 +917,31 @@ bool QueryActiveDisplays(std::vector<ActiveDisplayInfo>& out)
     if (rc != ERROR_SUCCESS)
         return false;
     for (const auto& p : paths) {
-        if (!(p.flags & DISPLAYCOoFIG_PATH_ACTIVE))
+        if (!(p.flags & DISPLAYCONFIG_PATH_ACTIVE))
             continue;
-        const UIoT32 idx = p.sourceInfo.modeInfoIdx;
-        if (idx == DISPLAYCOoFIG_PATH_MODE_IDX_IoVALID || idx >= modes.size() ||
-            modes[idx].infoType != DISPLAYCOoFIG_MODE_IoFO_TYPE_SOURCE)
+        const UINT32 idx = p.sourceInfo.modeInfoIdx;
+        if (idx == DISPLAYCONFIG_PATH_MODE_IDX_INVALID || idx >= modes.size() ||
+            modes[idx].infoType != DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
             continue;
-        const DISPLAYCOoFIG_SOURCE_MODE& sm = modes[idx].sourceMode;
+        const DISPLAYCONFIG_SOURCE_MODE& sm = modes[idx].sourceMode;
         if (sm.width == 0 || sm.height == 0)
             continue;
-        DISPLAYCOoFIG_SOURCE_DEVICE_oAME sn{};
-        sn.header.type = DISPLAYCOoFIG_DEVICE_IoFO_GET_SOURCE_oAME;
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME sn{};
+        sn.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
         sn.header.size = sizeof(sn);
         sn.header.adapterId = p.sourceInfo.adapterId;
         sn.header.id = p.sourceInfo.id;
         if (DisplayConfigGetDeviceInfo(&sn.header) != ERROR_SUCCESS)
             continue;
         ActiveDisplayInfo d;
-        d.gdioame = sn.viewGdiDeviceoame;
+        d.gdiName = sn.viewGdiDeviceName;
         d.rect.left = sm.position.x;
         d.rect.top = sm.position.y;
-        d.rect.right = sm.position.x + static_cast<LOoG>(sm.width);
-        d.rect.bottom = sm.position.y + static_cast<LOoG>(sm.height);
+        d.rect.right = sm.position.x + static_cast<LONG>(sm.width);
+        d.rect.bottom = sm.position.y + static_cast<LONG>(sm.height);
         d.sourceId = p.sourceInfo.id;
         d.adapter = p.sourceInfo.adapterId;
-        d.hzoum = p.targetInfo.refreshRate.oumerator;
+        d.hzNum = p.targetInfo.refreshRate.Numerator;
         d.hzDen = p.targetInfo.refreshRate.Denominator;
         out.push_back(std::move(d));
     }
@@ -953,11 +953,11 @@ bool RectsOverlap(const RECT& a, const RECT& b)
     return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 }
 
-// MTT head attached AoD active in the CCD topology with a valid, non-cloned
+// MTT head attached AND active in the CCD topology with a valid, non-cloned
 // source mode. Fills the live rect. This is the gate for every save: when the
 // user picked "Show only on 1" (MTT inactive) or the head is absent / mid
 // reconfigure, we must never overwrite the good saved position.
-bool QueryMttActiveRect(const std::wstring& gdioame, RECT& rect, std::string* why)
+bool QueryMttActiveRect(const std::wstring& gdiName, RECT& rect, std::string* why)
 {
     std::vector<ActiveDisplayInfo> act;
     if (!QueryActiveDisplays(act)) {
@@ -967,7 +967,7 @@ bool QueryMttActiveRect(const std::wstring& gdioame, RECT& rect, std::string* wh
     }
     const ActiveDisplayInfo* mtt = nullptr;
     for (const auto& d : act) {
-        if (_wcsicmp(d.gdioame.c_str(), gdioame.c_str()) == 0) {
+        if (_wcsicmp(d.gdiName.c_str(), gdiName.c_str()) == 0) {
             mtt = &d;
             break;
         }
@@ -994,16 +994,16 @@ bool QueryMttActiveRect(const std::wstring& gdioame, RECT& rect, std::string* wh
 
 // Would placing the MTT head at (x,y) with w x h overlap another active
 // display? Then Windows would reshuffle the layout ("position reset").
-bool SavedRectOverlapsOthers(const std::wstring& mttGdioame, int x, int y, uint32_t w, uint32_t h)
+bool SavedRectOverlapsOthers(const std::wstring& mttGdiName, int x, int y, uint32_t w, uint32_t h)
 {
     if (w == 0 || h == 0)
         return false;
     std::vector<ActiveDisplayInfo> act;
     if (!QueryActiveDisplays(act))
         return false;
-    RECT want{x, y, x + static_cast<LOoG>(w), y + static_cast<LOoG>(h)};
+    RECT want{x, y, x + static_cast<LONG>(w), y + static_cast<LONG>(h)};
     for (const auto& d : act) {
-        if (!mttGdioame.empty() && _wcsicmp(d.gdioame.c_str(), mttGdioame.c_str()) == 0)
+        if (!mttGdiName.empty() && _wcsicmp(d.gdiName.c_str(), mttGdiName.c_str()) == 0)
             continue;
         if (RectsOverlap(d.rect, want))
             return true;
@@ -1017,18 +1017,18 @@ bool SavedRectOverlapsOthers(const std::wstring& mttGdioame, int x, int y, uint3
 // legacy registry view.
 bool PersistActiveTopologyToDatabase(std::string& detail)
 {
-    std::vector<DISPLAYCOoFIG_PATH_IoFO> paths;
-    std::vector<DISPLAYCOoFIG_MODE_IoFO> modes;
-    LOoG rc = ERROR_IoSUFFICIEoT_BUFFER;
-    for (int tries = 0; tries < 4 && rc == ERROR_IoSUFFICIEoT_BUFFER; ++tries) {
-        UIoT32 np = 0, nm = 0;
-        if (GetDisplayConfigBufferSizes(QDC_OoLY_ACTIVE_PATHS, &np, &nm) != ERROR_SUCCESS) {
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+    LONG rc = ERROR_INSUFFICIENT_BUFFER;
+    for (int tries = 0; tries < 4 && rc == ERROR_INSUFFICIENT_BUFFER; ++tries) {
+        UINT32 np = 0, nm = 0;
+        if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &np, &nm) != ERROR_SUCCESS) {
             detail = "GetDisplayConfigBufferSizes failed";
             return false;
         }
         paths.resize(np);
         modes.resize(nm);
-        rc = QueryDisplayConfig(QDC_OoLY_ACTIVE_PATHS, &np, paths.data(), &nm, modes.data(), nullptr);
+        rc = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &np, paths.data(), &nm, modes.data(), nullptr);
         if (rc == ERROR_SUCCESS) {
             paths.resize(np);
             modes.resize(nm);
@@ -1038,12 +1038,12 @@ bool PersistActiveTopologyToDatabase(std::string& detail)
         detail = "QueryDisplayConfig failed rc=" + std::to_string(rc);
         return false;
     }
-    ooteSelfDisplayChange();
-    const LOoG sr = SetDisplayConfig(static_cast<UIoT32>(paths.size()), paths.data(),
-                                     static_cast<UIoT32>(modes.size()), modes.data(),
-                                     SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_COoFIG | SDC_SAVE_TO_DATABASE |
-                                         SDC_ALLOW_CHAoGES);
-    ooteSelfDisplayChange();
+    NoteSelfDisplayChange();
+    const LONG sr = SetDisplayConfig(static_cast<UINT32>(paths.size()), paths.data(),
+                                     static_cast<UINT32>(modes.size()), modes.data(),
+                                     SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE |
+                                         SDC_ALLOW_CHANGES);
+    NoteSelfDisplayChange();
     if (sr != ERROR_SUCCESS) {
         detail = "SetDisplayConfig(SAVE_TO_DATABASE) rc=" + std::to_string(sr);
         return false;
@@ -1055,7 +1055,7 @@ bool PersistActiveTopologyToDatabase(std::string& detail)
 } // namespace
 
 // ---- Runtime EDID: single source of MTT modes ----------------------------
-// MttModesForHello is the OoE place the MTT mode list comes from: EDID DTDs,
+// MttModesForHello is the ONE place the MTT mode list comes from: EDID DTDs,
 // XML <resolutions>, attach defaults and BakedMttModes (11" fallback) all
 // derive from it. tools/gen_user_edid.py (modes_for_size / build_edid) is the
 // byte-identical reference implementation - keep them in lockstep.
@@ -1069,7 +1069,7 @@ constexpr uint32_t kEdidMaxDim = 4095; // DTD 12-bit active fields
 struct IpadPanel {
     uint32_t w, h;
 };
-// oative iPad panels (landscape); sibling candidates after 16-floor.
+// Native iPad panels (landscape); sibling candidates after 16-floor.
 constexpr IpadPanel kIpadPanels[] = {
     {2360, 1640}, // 10.9" / 11" Air, iPad 10th
     {2388, 1668}, // 11" Pro (pre-M4), 11" Air M2
@@ -1083,7 +1083,7 @@ constexpr IpadPanel kIpadPanels[] = {
 };
 
 // Physical size: 2352 px -> 225 mm (~265 ppi). Keeps the 11" fallback at 225x156 mm.
-constexpr uint32_t kMmoum = 225;
+constexpr uint32_t kMmNum = 225;
 constexpr uint32_t kMmDen = 2352;
 
 constexpr uint8_t kEdidManufacturer[2] = {0x36, 0x94}; // "MTT"
@@ -1099,7 +1099,7 @@ uint32_t Align16Floor(uint32_t v)
 
 uint32_t PhysicalMm(uint32_t px)
 {
-    return (px * kMmoum + kMmDen / 2) / kMmDen;
+    return (px * kMmNum + kMmDen / 2) / kMmDen;
 }
 
 struct CvtTiming {
@@ -1172,24 +1172,24 @@ void PackDetailedTiming(const CvtTiming& p, uint32_t hMm, uint32_t vMm, uint8_t*
     b[17] = 0x1E; // digital separate sync, +h +v
 }
 
-std::mutex& ootifierMutex()
+std::mutex& NotifierMutex()
 {
     static std::mutex mu;
     return mu;
 }
 
-std::function<void(const std::wstring&)>& ootifierFn()
+std::function<void(const std::wstring&)>& NotifierFn()
 {
     static std::function<void(const std::wstring&)> fn;
     return fn;
 }
 
-void ootifyUser(const std::wstring& text)
+void NotifyUser(const std::wstring& text)
 {
     std::function<void(const std::wstring&)> fn;
     {
-        std::lock_guard<std::mutex> lock(ootifierMutex());
-        fn = ootifierFn();
+        std::lock_guard<std::mutex> lock(NotifierMutex());
+        fn = NotifierFn();
     }
     if (fn)
         fn(text);
@@ -1197,10 +1197,10 @@ void ootifyUser(const std::wstring& text)
 
 bool ProcessIsElevated()
 {
-    HAoDLE token = nullptr;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEo_QUERY, &token))
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
         return false;
-    TOKEo_ELEVATIOo elev{};
+    TOKEN_ELEVATION elev{};
     DWORD len = 0;
     const bool ok = GetTokenInformation(token, TokenElevation, &elev, sizeof(elev), &len) != FALSE;
     CloseHandle(token);
@@ -1331,10 +1331,10 @@ std::vector<uint8_t> BuildMttEdid(const std::vector<MttMode>& modes)
                 return {};
             PackDetailedTiming(t, hMm, vMm, d);
         } else if (slot == modes.size()) {
-            static const char koame[] = "OpenDisplay\n";
+            static const char kName[] = "OpenDisplay\n";
             d[3] = 0xFC; // monitor name
             memset(d + 5, ' ', 13);
-            memcpy(d + 5, koame, sizeof(koame) - 1);
+            memcpy(d + 5, kName, sizeof(kName) - 1);
         } else {
             d[3] = 0x10; // dummy descriptor
         }
@@ -1373,10 +1373,10 @@ std::vector<MttMode> CurrentMttModes()
     return out;
 }
 
-void SetMttUserootifier(std::function<void(const std::wstring&)> fn)
+void SetMttUserNotifier(std::function<void(const std::wstring&)> fn)
 {
-    std::lock_guard<std::mutex> lock(ootifierMutex());
-    ootifierFn() = std::move(fn);
+    std::lock_guard<std::mutex> lock(NotifierMutex());
+    NotifierFn() = std::move(fn);
 }
 
 
@@ -1425,7 +1425,7 @@ MttEnsureResult EnsureCustomEdidBytes(const std::vector<uint8_t>& edid, const st
         const DWORD err = GetLastError();
         char buf[112];
         snprintf(buf, sizeof(buf), "%s write failed (err=%lu)%s", what, static_cast<unsigned long>(err),
-                 err == ERROR_ACCESS_DEoIED ? " access denied" : "");
+                 err == ERROR_ACCESS_DENIED ? " access denied" : "");
         r.detail = buf;
         return r;
     };
@@ -1505,7 +1505,7 @@ MttEnsureResult EnsureCustomEdidBytes(const std::vector<uint8_t>& edid, const st
     r.detail += "; " + reloadDetail;
     r.reloadFailed = !reloaded;
     if (!reloaded)
-        r.detail += " (files written, driver oOT reloaded)";
+        r.detail += " (files written, driver NOT reloaded)";
     return r;
 }
 
@@ -1567,14 +1567,14 @@ MttEnsureResult EnsureResolutions(const std::vector<MttMode>& wanted)
 
     const int removed = static_cast<int>(present.size()) - static_cast<int>(need.size());
     r.added = static_cast<int>(need.size());
-    std::vector<std::string> backupootes;
-    BackupOnce(r.path, backupootes);
+    std::vector<std::string> backupNotes;
+    BackupOnce(r.path, backupNotes);
     if (!WriteFileUtf8Atomic(r.path, rewritten)) {
         const DWORD err = GetLastError();
         char buf[96];
         snprintf(buf, sizeof(buf), "write failed (err=%lu)%s",
                  static_cast<unsigned long>(err),
-                 err == ERROR_ACCESS_DEoIED ? " access denied" : "");
+                 err == ERROR_ACCESS_DENIED ? " access denied" : "");
         r.detail = buf;
         return r;
     }
@@ -1615,7 +1615,7 @@ struct ElevatedLaunch {
     std::condition_variable cv;
     bool done = false;
     bool abandoned = false;
-    HAoDLE process = nullptr;
+    HANDLE process = nullptr;
     DWORD err = 0;
 };
 
@@ -1630,7 +1630,7 @@ void ImportElevatedChildLog(DWORD pid, const std::string& logTag)
     std::string body;
     if (!ReadFileUtf8(path, body)) {
         Logf(logTag, "mtt: elevated helper log %s not found (approved with a different admin account?)\n",
-             oarrowPath(path).c_str());
+             NarrowPath(path).c_str());
         return;
     }
     std::istringstream in(body);
@@ -1648,17 +1648,17 @@ ElevatedOutcome RunElevatedSelf(const std::wstring& args, const std::string& log
                                 const std::atomic<bool>* cancel, int timeoutMs)
 {
     wchar_t exe[MAX_PATH];
-    if (GetModuleFileoameW(nullptr, exe, MAX_PATH) == 0)
+    if (GetModuleFileNameW(nullptr, exe, MAX_PATH) == 0)
         return ElevatedOutcome::Failed;
     const std::wstring exePath = exe;
     auto cancelled = [cancel]() { return g_mttShuttingDown.load() || (cancel != nullptr && cancel->load()); };
 
     auto st = std::make_shared<ElevatedLaunch>();
     std::thread([st, exePath, args]() {
-        const HRESULT hr = CoInitializeEx(nullptr, COIoIT_APARTMEoTTHREADED | COIoIT_DISABLE_OLE1DDE);
-        SHELLEXECUTEIoFOW sei{};
+        const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        SHELLEXECUTEINFOW sei{};
         sei.cbSize = sizeof(sei);
-        sei.fMask = SEE_MASK_oOCLOSEPROCESS | SEE_MASK_oOASYoC;
+        sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
         sei.lpVerb = L"runas";
         sei.lpFile = exePath.c_str();
         sei.lpParameters = args.c_str();
@@ -1675,7 +1675,7 @@ ElevatedOutcome RunElevatedSelf(const std::wstring& args, const std::string& log
                 else
                     st->process = sei.hProcess;
             } else if (ok) {
-                st->err = ERROR_IoVALID_HAoDLE;
+                st->err = ERROR_INVALID_HANDLE;
             }
         }
         st->cv.notify_all();
@@ -1684,7 +1684,7 @@ ElevatedOutcome RunElevatedSelf(const std::wstring& args, const std::string& log
     }).detach();
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-    HAoDLE process = nullptr;
+    HANDLE process = nullptr;
     DWORD err = 0;
     {
         std::unique_lock<std::mutex> lock(st->mu);
@@ -1707,7 +1707,7 @@ ElevatedOutcome RunElevatedSelf(const std::wstring& args, const std::string& log
         err = st->err;
     }
     if (process == nullptr) {
-        if (err == ERROR_CAoCELLED)
+        if (err == ERROR_CANCELLED)
             return ElevatedOutcome::Declined;
         Logf(logTag, "mtt: elevated helper launch failed (err=%lu)\n", static_cast<unsigned long>(err));
         return ElevatedOutcome::Failed;
@@ -1748,7 +1748,7 @@ ElevatedOutcome RunElevatedSelf(const std::wstring& args, const std::string& log
 std::wstring EnsureEdidArgs(uint32_t helloW, uint32_t helloH)
 {
     // The elevated child regenerates the same bytes from the hello size
-    // (deterministic), writes them and restarts MttVDD. oo size -> the 11" default.
+    // (deterministic), writes them and restarts MttVDD. No size -> the 11" default.
     std::wstring args = L"--ensure-mtt-edid";
     if (helloW && helloH)
         args += L" " + std::to_wstring(helloW) + L"x" + std::to_wstring(helloH);
@@ -1766,9 +1766,9 @@ bool VerifyMttModesOffered(const std::string& logTag, int timeoutMs)
     for (int waited = 0;; waited += 250) {
         if (FindMttVirtualMonitor(mon)) {
             sawHead = true;
-            if (MonitorOffersModeImpl(mon.deviceoame, want.width, want.height)) {
+            if (MonitorOffersModeImpl(mon.deviceName, want.width, want.height)) {
                 if (!g_mttModesVerified.exchange(true))
-                    Logf(logTag, "mtt: verified - %ls offers %ux%u (expected modes: %s)\n", mon.deviceoame.c_str(),
+                    Logf(logTag, "mtt: verified - %ls offers %ux%u (expected modes: %s)\n", mon.deviceName.c_str(),
                          want.width, want.height, FormatModes(expected).c_str());
                 return true;
             }
@@ -1784,9 +1784,9 @@ bool VerifyMttModesOffered(const std::string& logTag, int timeoutMs)
     }
     Logf(logTag,
          "mtt: VERIFY FAILED - %ls does not offer %ux%u after %d ms; driver offers %s. vdd_settings.xml / "
-         "user_edid.bin list %s but MttVDD has not reloaded them. oo layout is saved until this passes. "
+         "user_edid.bin list %s but MttVDD has not reloaded them. No layout is saved until this passes. "
          "Fix: VDD Control > Restart Driver, then reconnect.\n",
-         mon.deviceoame.c_str(), want.width, want.height, timeoutMs, DescribeOfferedModes(mon.deviceoame).c_str(),
+         mon.deviceName.c_str(), want.width, want.height, timeoutMs, DescribeOfferedModes(mon.deviceName).c_str(),
          FormatModes(expected).c_str());
     return false;
 }
@@ -1825,7 +1825,7 @@ bool EnsureMttResolutionsForHello(uint32_t helloW, uint32_t helloH, const std::s
         return false;
     }
     if (!probe.changed) {
-        Logf(logTag, "mtt: EDID current for this iPad (no write, no reload) path=%s\n", oarrowPath(probe.path).c_str());
+        Logf(logTag, "mtt: EDID current for this iPad (no write, no reload) path=%s\n", NarrowPath(probe.path).c_str());
         return true;
     }
     Logf(logTag, "mtt: EDID update needed for hello %ux%u (%s)\n", helloW, helloH, probe.detail.c_str());
@@ -1833,7 +1833,7 @@ bool EnsureMttResolutionsForHello(uint32_t helloW, uint32_t helloH, const std::s
     if (ProcessIsElevated()) {
         const MttEnsureResult r = EnsureCustomEdidForHello(helloW, helloH, /*dryRun=*/false);
         Logf(logTag, "mtt: EDID install %s (%s)\n",
-             !r.ok ? "failed" : r.reloadFailed ? "written, driver oOT restarted" : "done", r.detail.c_str());
+             !r.ok ? "failed" : r.reloadFailed ? "written, driver NOT restarted" : "done", r.detail.c_str());
         if (r.ok)
             g_mttPositionedThisAttach = false; // head re-enumerated: apply saved layout once
         return r.ok && !r.reloadFailed;
@@ -1846,7 +1846,7 @@ bool EnsureMttResolutionsForHello(uint32_t helloW, uint32_t helloH, const std::s
         return false;
     }
 
-    ootifyUser(L"Setting up this iPad's screen size (one time only).");
+    NotifyUser(L"Setting up this iPad's screen size (one time only).");
     Logf(logTag, "mtt: EDID install needs admin, elevating (--ensure-mtt-edid %ux%u)...\n", helloW, helloH);
     const ElevatedOutcome outcome =
         RunElevatedSelf(EnsureEdidArgs(helloW, helloH), logTag, cancel, kElevatedTimeoutMs);
@@ -1858,7 +1858,7 @@ bool EnsureMttResolutionsForHello(uint32_t helloW, uint32_t helloH, const std::s
             return false;
         }
         if (outcome == ElevatedOutcome::ReloadFailed) {
-            Logf(logTag, "mtt: EDID files installed for hello %ux%u, but the MttVDD adapter did oOT restart "
+            Logf(logTag, "mtt: EDID files installed for hello %ux%u, but the MttVDD adapter did NOT restart "
                          "(see [elevated] lines above) - the driver keeps its old modes until it restarts\n",
                  helloW, helloH);
             return false;
@@ -1883,7 +1883,7 @@ bool EnsureMttResolutionsForHello(uint32_t helloW, uint32_t helloH, const std::s
     }
     g_mttEdidDeclinedKey.store(key);
     if (!FileExists(kLiveEdidPath)) {
-        // oothing installed at all: best effort with the 11" default EDID
+        // Nothing installed at all: best effort with the 11" default EDID
         // (may still need admin to reload; never blocks the connection).
         const MttEnsureResult fb = EnsureCustomEdid();
         Logf(logTag, "mtt: fallback EDID (11\" default) %s (%s)\n", fb.ok ? "installed" : "not installed",
@@ -1954,14 +1954,14 @@ MttEnsureResult SetMonitorCount(uint32_t count)
             r.detail = "malformed XML (no <monitors>)";
             return r;
         }
-        std::vector<std::string> backupootes;
-        BackupOnce(r.path, backupootes);
+        std::vector<std::string> backupNotes;
+        BackupOnce(r.path, backupNotes);
         if (!WriteFileUtf8Atomic(r.path, rewritten)) {
             const DWORD err = GetLastError();
             char buf[96];
             snprintf(buf, sizeof(buf), "write failed (err=%lu)%s",
                      static_cast<unsigned long>(err),
-                     err == ERROR_ACCESS_DEoIED ? " access denied" : "");
+                     err == ERROR_ACCESS_DENIED ? " access denied" : "");
             r.detail = buf;
             return r;
         }
@@ -2015,15 +2015,15 @@ bool EnsureMttVddAttached(const std::string& logTag, const std::atomic<bool>* ca
         if (!g_mttPositionedThisAttach.exchange(true)) {
             if (MttHeadOwned()) {
                 Logf(logTag, "mtt: adopting MTT head already on the desktop (%ls) - applying saved layout once\n",
-                     mon.deviceoame.c_str());
+                     mon.deviceName.c_str());
                 (void)RestoreMttDisplayTopology(logTag);
             } else {
                 Logf(logTag, "mtt: using MTT head %ls that OpenDisplay did not create - not moving it, and it "
                              "is not removed on disconnect/quit\n",
-                     mon.deviceoame.c_str());
+                     mon.deviceName.c_str());
             }
         } else {
-            Logf(logTag, "mtt: VDD already attached (%ls) - keeping current layout\n", mon.deviceoame.c_str());
+            Logf(logTag, "mtt: VDD already attached (%ls) - keeping current layout\n", mon.deviceName.c_str());
         }
         return true;
     }
@@ -2051,7 +2051,7 @@ bool EnsureMttVddAttached(const std::string& logTag, const std::atomic<bool>* ca
     }
 
     if (FindMttVirtualMonitor(mon)) {
-        Logf(logTag, "mtt: VDD attached (%ls) [%s]\n", mon.deviceoame.c_str(), r.detail.c_str());
+        Logf(logTag, "mtt: VDD attached (%ls) [%s]\n", mon.deviceName.c_str(), r.detail.c_str());
         SetMttHeadOwned(true, &mon);
         g_mttPositionedThisAttach = true;
         (void)RestoreMttDisplayTopology(logTag);
@@ -2084,18 +2084,18 @@ bool EnsureMttVddAttached(const std::string& logTag, const std::atomic<bool>* ca
                 havePos = true;
             }
         }
-        if (havePos && SavedRectOverlapsOthers(mon.deviceoame, attachX, attachY, attachW, attachH)) {
+        if (havePos && SavedRectOverlapsOthers(mon.deviceName, attachX, attachY, attachW, attachH)) {
             Logf(logTag, "mtt: saved position (%d,%d) overlaps another display - letting Windows place the head\n",
                  attachX, attachY);
             havePos = false;
         }
-        Logf(logTag, "mtt: attaching detached head %ls at %ux%u@%u%s\n", mon.deviceoame.c_str(),
+        Logf(logTag, "mtt: attaching detached head %ls at %ux%u@%u%s\n", mon.deviceName.c_str(),
              attachW, attachH, attachHz, havePos ? " (saved position)" : "");
-        if (AttachMonitorToDesktop(mon.deviceoame, attachW, attachH, attachHz, havePos, attachX,
+        if (AttachMonitorToDesktop(mon.deviceName, attachW, attachH, attachHz, havePos, attachX,
                                    attachY) &&
             WaitForMttMonitor(/*wantPresent=*/true, 5000)) {
             if (FindMttVirtualMonitor(mon)) {
-                Logf(logTag, "mtt: VDD attached via CDS (%ls)\n", mon.deviceoame.c_str());
+                Logf(logTag, "mtt: VDD attached via CDS (%ls)\n", mon.deviceName.c_str());
                 SetMttHeadOwned(true, &mon);
                 g_mttPositionedThisAttach = true;
                 (void)RestoreMttDisplayTopology(logTag);
@@ -2108,10 +2108,10 @@ bool EnsureMttVddAttached(const std::string& logTag, const std::atomic<bool>* ca
     {
         static const GUID kMonitorClass = {
             0x4d36e96e, 0xe325, 0x11ce, {0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18}};
-        HDEVIoFO devInfo = SetupDiGetClassDevsW(&kMonitorClass, nullptr, nullptr, 0);
+        HDEVINFO devInfo = SetupDiGetClassDevsW(&kMonitorClass, nullptr, nullptr, 0);
         bool enabled = false;
-        if (devInfo != IoVALID_HAoDLE_VALUE) {
-            SP_DEVIoFO_DATA did{};
+        if (devInfo != INVALID_HANDLE_VALUE) {
+            SP_DEVINFO_DATA did{};
             did.cbSize = sizeof(did);
             for (DWORD i = 0; SetupDiEnumDeviceInfo(devInfo, i, &did); ++i) {
                 wchar_t instanceId[256];
@@ -2119,14 +2119,14 @@ bool EnsureMttVddAttached(const std::string& logTag, const std::atomic<bool>* ca
                     continue;
                 if (wcsstr(instanceId, L"MTT1337") == nullptr)
                     continue;
-                SP_PROPCHAoGE_PARAMS pcp{};
-                pcp.ClassInstallHeader.cbSize = sizeof(SP_CLASSIoSTALL_HEADER);
-                pcp.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHAoGE;
-                pcp.StateChange = DICS_EoABLE;
+                SP_PROPCHANGE_PARAMS pcp{};
+                pcp.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
+                pcp.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
+                pcp.StateChange = DICS_ENABLE;
                 pcp.Scope = DICS_FLAG_GLOBAL;
                 pcp.HwProfile = 0;
                 if (SetupDiSetClassInstallParamsW(devInfo, &did, &pcp.ClassInstallHeader, sizeof(pcp)) &&
-                    SetupDiCallClassInstaller(DIF_PROPERTYCHAoGE, devInfo, &did))
+                    SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, devInfo, &did))
                     enabled = true;
             }
             SetupDiDestroyDeviceInfoList(devInfo);
@@ -2149,16 +2149,16 @@ bool EnsureMttVddAttached(const std::string& logTag, const std::atomic<bool>* ca
                     }
                     ax = saved.x;
                     ay = saved.y;
-                    hp = !SavedRectOverlapsOthers(mon.deviceoame, ax, ay, aw, ah);
+                    hp = !SavedRectOverlapsOthers(mon.deviceName, ax, ay, aw, ah);
                 }
-                (void)AttachMonitorToDesktop(mon.deviceoame, aw, ah, ahz, hp, ax, ay);
+                (void)AttachMonitorToDesktop(mon.deviceName, aw, ah, ahz, hp, ax, ay);
                 (void)WaitForMttMonitor(/*wantPresent=*/true, 5000);
             }
         }
     }
 
     if (FindMttVirtualMonitor(mon)) {
-        Logf(logTag, "mtt: VDD attached (%ls) [%s]\n", mon.deviceoame.c_str(), r.detail.c_str());
+        Logf(logTag, "mtt: VDD attached (%ls) [%s]\n", mon.deviceName.c_str(), r.detail.c_str());
         SetMttHeadOwned(true, &mon);
         g_mttPositionedThisAttach = true;
         (void)RestoreMttDisplayTopology(logTag);
@@ -2186,9 +2186,9 @@ bool TearDownMttVdd(const std::string& logTag)
     // Leave monitors/<count> alone so the next hello can CDS-attach without a
     // driver reload (count=0 + pnputil was slow and flaky to reverse).
     if (FindMttVirtualMonitor(mon)) {
-        Logf(logTag, "mtt: detaching head %ls from desktop\n", mon.deviceoame.c_str());
-        if (!DetachMonitorFromDesktop(mon.deviceoame))
-            Logf(logTag, "mtt: CDS detach request failed on %ls\n", mon.deviceoame.c_str());
+        Logf(logTag, "mtt: detaching head %ls from desktop\n", mon.deviceName.c_str());
+        if (!DetachMonitorFromDesktop(mon.deviceName))
+            Logf(logTag, "mtt: CDS detach request failed on %ls\n", mon.deviceName.c_str());
         (void)WaitForMttMonitor(/*wantPresent=*/false, 4000);
     }
 
@@ -2217,10 +2217,10 @@ bool TearDownMttVdd(const std::string& logTag)
     {
         static const GUID kMonitorClass = {
             0x4d36e96e, 0xe325, 0x11ce, {0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18}};
-        HDEVIoFO devInfo = SetupDiGetClassDevsW(&kMonitorClass, nullptr, nullptr, DIGCF_PRESEoT);
+        HDEVINFO devInfo = SetupDiGetClassDevsW(&kMonitorClass, nullptr, nullptr, DIGCF_PRESENT);
         bool disabled = false;
-        if (devInfo != IoVALID_HAoDLE_VALUE) {
-            SP_DEVIoFO_DATA did{};
+        if (devInfo != INVALID_HANDLE_VALUE) {
+            SP_DEVINFO_DATA did{};
             did.cbSize = sizeof(did);
             for (DWORD i = 0; SetupDiEnumDeviceInfo(devInfo, i, &did); ++i) {
                 wchar_t instanceId[256];
@@ -2228,14 +2228,14 @@ bool TearDownMttVdd(const std::string& logTag)
                     continue;
                 if (wcsstr(instanceId, L"MTT1337") == nullptr)
                     continue;
-                SP_PROPCHAoGE_PARAMS pcp{};
-                pcp.ClassInstallHeader.cbSize = sizeof(SP_CLASSIoSTALL_HEADER);
-                pcp.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHAoGE;
+                SP_PROPCHANGE_PARAMS pcp{};
+                pcp.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
+                pcp.ClassInstallHeader.InstallFunction = DIF_PROPERTYCHANGE;
                 pcp.StateChange = DICS_DISABLE;
                 pcp.Scope = DICS_FLAG_GLOBAL;
                 pcp.HwProfile = 0;
                 if (SetupDiSetClassInstallParamsW(devInfo, &did, &pcp.ClassInstallHeader, sizeof(pcp)) &&
-                    SetupDiCallClassInstaller(DIF_PROPERTYCHAoGE, devInfo, &did))
+                    SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, devInfo, &did))
                     disabled = true;
             }
             SetupDiDestroyDeviceInfoList(devInfo);
@@ -2339,12 +2339,12 @@ bool SaveMttDisplayTopology(const std::string& logTag)
     if (!FindMttVirtualMonitor(mon))
         return false; // absent / detached ("Show only on 1"): keep the good saved layout
 
-    // Only save when the head is attached AoD active in the CCD topology with a
+    // Only save when the head is attached AND active in the CCD topology with a
     // valid, non-cloned source mode. Anything else (inactive, mid-reconfigure,
     // duplicated) would overwrite a good saved position with junk.
     RECT live{};
     std::string why;
-    if (!QueryMttActiveRect(mon.deviceoame, live, &why)) {
+    if (!QueryMttActiveRect(mon.deviceName, live, &why)) {
         if (why != s_lastSkip) {
             Logf(logTag, "mtt: not saving layout (%s)\n", why.c_str());
             s_lastSkip = why;
@@ -2364,7 +2364,7 @@ bool SaveMttDisplayTopology(const std::string& logTag)
 
     DEVMODEW dm{};
     dm.dmSize = sizeof(dm);
-    if (EnumDisplaySettingsW(mon.deviceoame.c_str(), EoUM_CURREoT_SETTIoGS, &dm)) {
+    if (EnumDisplaySettingsW(mon.deviceName.c_str(), ENUM_CURRENT_SETTINGS, &dm)) {
         hz = dm.dmDisplayFrequency;
         if (dm.dmDisplayOrientation != DMDO_DEFAULT && havePrev && prev.width && prev.height) {
             // Restore always applies landscape; keep the last landscape mode and
@@ -2375,7 +2375,7 @@ bool SaveMttDisplayTopology(const std::string& logTag)
         }
     }
 
-    // oever persist a mode the driver was not supposed to offer (e.g. the
+    // Never persist a mode the driver was not supposed to offer (e.g. the
     // 800x600 head MttVDD shows when it did not reload the per-iPad EDID).
     {
         std::string skip;
@@ -2402,7 +2402,7 @@ bool SaveMttDisplayTopology(const std::string& logTag)
     t.width = w;
     t.height = h;
     t.hz = hz;
-    t.deviceId = oarrowPath(mon.deviceId);
+    t.deviceId = NarrowPath(mon.deviceId);
     t.valid = true;
     if (!WriteTopologyFile(t)) {
         Logf(logTag, "mtt: failed to save position (%d,%d) %ux%u@%u\n", x, y, w, h, hz);
@@ -2449,7 +2449,7 @@ bool RestoreMttDisplayTopology(const std::string& logTag)
     // FindMttVirtualMonitor matched MTT1337 / VDD by MTT (not DISPLAY index).
     DEVMODEW dm{};
     dm.dmSize = sizeof(dm);
-    bool haveDm = EnumDisplaySettingsW(mon.deviceoame.c_str(), EoUM_CURREoT_SETTIoGS, &dm) != 0;
+    bool haveDm = EnumDisplaySettingsW(mon.deviceName.c_str(), ENUM_CURRENT_SETTINGS, &dm) != 0;
 
     bool modeOk = true;
     if (t.width > 0 && t.height > 0) {
@@ -2471,12 +2471,12 @@ bool RestoreMttDisplayTopology(const std::string& logTag)
         if (already) {
             Logf(logTag, "mtt: restoring saved mode %ux%u@%u (already current)\n", t.width, t.height,
                  applyHz);
-        } else if (EnsureMonitorMode(mon.deviceoame, t.width, t.height, applyHz)) {
+        } else if (EnsureMonitorMode(mon.deviceName, t.width, t.height, applyHz)) {
             Logf(logTag, "mtt: restoring saved mode %ux%u@%u\n", t.width, t.height, applyHz);
-            haveDm = EnumDisplaySettingsW(mon.deviceoame.c_str(), EoUM_CURREoT_SETTIoGS, &dm) != 0;
+            haveDm = EnumDisplaySettingsW(mon.deviceName.c_str(), ENUM_CURRENT_SETTINGS, &dm) != 0;
         } else {
             Logf(logTag, "mtt: restore saved mode %ux%u@%u failed on %ls\n", t.width, t.height, applyHz,
-                 mon.deviceoame.c_str());
+                 mon.deviceName.c_str());
             modeOk = false;
         }
     }
@@ -2486,13 +2486,13 @@ bool RestoreMttDisplayTopology(const std::string& logTag)
     const uint32_t curH = haveDm ? dm.dmPelsHeight : t.height;
     if (haveDm && dm.dmPosition.x == t.x && dm.dmPosition.y == t.y) {
         // already there
-    } else if (SavedRectOverlapsOthers(mon.deviceoame, t.x, t.y, curW, curH)) {
+    } else if (SavedRectOverlapsOthers(mon.deviceName, t.x, t.y, curW, curH)) {
         // e.g. a stale (0,0) would land on top of the primary and Windows
         // would reshuffle everything - keep Windows' placement instead.
         Logf(logTag, "mtt: saved position (%d,%d) overlaps another display - keeping current placement\n",
              t.x, t.y);
-    } else if (!SetMonitorDesktopPosition(mon.deviceoame, t.x, t.y)) {
-        Logf(logTag, "mtt: restore position (%d,%d) failed on %ls\n", t.x, t.y, mon.deviceoame.c_str());
+    } else if (!SetMonitorDesktopPosition(mon.deviceName, t.x, t.y)) {
+        Logf(logTag, "mtt: restore position (%d,%d) failed on %ls\n", t.x, t.y, mon.deviceName.c_str());
         posOk = false;
     } else {
         Logf(logTag, "mtt: restored position (%d,%d)\n", t.x, t.y);
@@ -2523,10 +2523,10 @@ bool ShutdownMttVddForExit(const std::string& logTag)
     }
     if (!MttHeadOwned()) {
         Logf(logTag, "mtt: exit - MTT head %ls was not created by OpenDisplay, leaving it\n",
-             mon.deviceoame.c_str());
+             mon.deviceName.c_str());
         return true;
     }
-    Logf(logTag, "mtt: exit - tearing down MTT head %ls\n", mon.deviceoame.c_str());
+    Logf(logTag, "mtt: exit - tearing down MTT head %ls\n", mon.deviceName.c_str());
     (void)SaveMttDisplayTopology(logTag);
     return TearDownMttVdd(logTag);
 }
@@ -2538,13 +2538,13 @@ void AdoptStaleMttHeadAtStartup(const std::string& logTag, int graceMs)
         return;
     if (!MttHeadOwned()) {
         Logf(logTag, "mtt: MTT head %ls on the desktop at startup was not created by OpenDisplay - leaving it\n",
-             mon.deviceoame.c_str());
+             mon.deviceName.c_str());
         return;
     }
     Logf(logTag,
          "mtt: MTT head %ls already on the desktop at startup (left over from a previous run) - "
          "adopting; removed in %d ms unless an iPad connects\n",
-         mon.deviceoame.c_str(), graceMs);
+         mon.deviceName.c_str(), graceMs);
     g_mttPositionedThisAttach = false; // first Ensure applies the saved layout once
     RequestMttVddTeardown(logTag, MttTeardownReason::LinkLoss, graceMs);
 }

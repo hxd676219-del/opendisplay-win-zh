@@ -29,6 +29,8 @@ namespace od {
 namespace {
 
 constexpr UINT WM_APP_TRAY = WM_APP + 1;
+// Explorer (taskbar) restarted: broadcast by the shell; re-add the tray icon.
+const UINT kTaskbarCreatedMsg = RegisterWindowMessageW(L"TaskbarCreated");
 // Sender thread -> tray: show a balloon. lParam = heap std::wstring (deleted here).
 constexpr UINT WM_APP_NOTIFY = WM_APP + 2;
 // A sender's state / transport / wait reason / pause changed (or discovery
@@ -1250,6 +1252,11 @@ void CALLBACK OnDesktopSwitch(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWO
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     auto* ctx = reinterpret_cast<TrayContext*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+    if (msg == kTaskbarCreatedMsg && ctx) {
+        Shell_NotifyIconW(NIM_ADD, &ctx->nid); // explorer came back: re-register icon
+        return 0;
+    }
 
     switch (msg) {
         case WM_APP_NOTIFY: {
