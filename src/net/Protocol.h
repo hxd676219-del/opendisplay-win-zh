@@ -1,0 +1,113 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+
+// Control-message model for the OpenDisplay wire protocol (receiver -> sender).
+// Deliberately not a general JSON library: the protocol only ever carries a
+// handful of flat, unescaped, single-level objects (see PhoneReceiver.swift),
+// so a tiny field-scanner is enough and keeps the dependency footprint at zero.
+namespace od {
+
+enum class ControlType { Hello, Touch, Scroll, Pencil, Proximity, Kf, CursorAck, Stats, Ping, Unknown };
+
+enum class TouchPhase { Began, Moved, Ended, Cancelled, Unknown };
+
+enum class PencilPhase { Hover, Down, Move, Up, Unknown };
+
+// One hello.videoCaps envelope (PROTOCOL 6.5). 0 = limit absent. All limits
+// in one entry apply together; entries for the same codec are alternatives.
+struct VideoCapEntry {
+    std::string codec; // lowercase token, e.g. "h264", "hevc"
+    uint32_t maxWidth = 0;
+    uint32_t maxHeight = 0;
+    uint32_t maxFrameRate = 0;
+    uint64_t maxPixelsPerSecond = 0;
+};
+
+struct HelloMsg {
+    int pixelsWide = 0;
+    int pixelsHigh = 0;
+    int scale = 1;
+    std::string device;
+    std::string id;
+    // UDP cursor side channel (PROTOCOL 6.3). 0 = absent / stay on TCP.
+    int cursorPort = 0;
+    // pv 3 (PROTOCOL 6.5). 0 = absent (legacy default 60 FPS).
+    uint32_t displayMaxFrameRate = 0;
+    std::vector<VideoCapEntry> videoCaps; // empty = absent (legacy H.264)
+};
+
+// Highest frame rate we may stream to this receiver with `codec` at an
+// encoded raster of width x height: min(displayMaxFrameRate, the best
+// matching videoCaps envelope's maxFrameRate / maxPixelsPerSecond). Absent
+// fields impose nothing; nothing at all means 60.
+uint32_t StreamFpsLimit(const HelloMsg& hello, const char* codec, uint32_t width, uint32_t height);
+
+struct TouchMsg {
+    TouchPhase phase = TouchPhase::Unknown;
+    double x = 0.0; // normalized [0,1], origin top-left
+    double y = 0.0;
+    // Wire contact id when present; absent => 0. Single-finger today; multi
+    // fingers reuse the same frame shape with distinct ids.
+    uint32_t id = 0;
+};
+
+struct ScrollMsg {
+    double dx = 0.0; // video pixels
+    double dy = 0.0;
+};
+
+// pi/2: pen standing perpendicular to the glass. Used as the neutral default
+// whenever a message carries no altitude.
+inline constexpr double kPencilAltitudeUpright = 1.5707963267948966;
+
+// Apple Pencil, receiver protocol >= 3 only. The receiver sends these instead
+// of `touch` for pen input, but *only* once we announced ourselves as protocol
+// 3 or newer in the `welcome` reply — otherwise it silently falls back to
+// `touch` and pressure never reaches us.
+struct PencilMsg {
+    PencilPhase phase = PencilPhase::Unknown;
+    double x = 0.0;        // normalized [0,1], origin top-left (as for touch)
+    double y = 0.0;
+    double pressure = 0.0; // [0,1]
+    double azimuth = 0.0;  // radians, UIKit convention
+    double altitude = kPencilAltitudeUpright; // radians
+    // `rotation` (barrel roll) is on the wire but always 0: it needs an Apple
+    // Pencil Pro, which upstream has not wired up yet. Not parsed.
+};
+
+struct PingMsg {
+    double t = 0.0; // ms since Unix epoch on the receiver's clock
+};
+
+struct ProximityMsg {
+    bool entering = false; // pen entered (true) or left (false) hover range
+    double x = 0.0;
+    double y = 0.0;
+};
+
+struct ControlMessage {
+    ControlType type = ControlType::Unknown;
+    HelloMsg hello;
+    TouchMsg touch;
+    ScrollMsg scroll;
+    PencilMsg pencil;
+    ProximityMsg proximity;
+    PingMsg ping;
+};
+
+// Wire classification rule (spec §3 / PhoneReceiver.handleAnnexB):
+// control JSON iff size < 32768 AND payload[0] == '{' AND payload contains no 0x00 byte.
+bool IsControlPayload(const uint8_t* data, size_t size);
+
+// Parses a payload that already passed IsControlPayload(). Unrecognized "type"
+// values (e.g. "pong" from us, unknown future types) parse as ControlType::Unknown so
+// callers can ignore them without treating them as errors.
+std::optional<ControlMessage> ParseControlMessage(const uint8_t* data, size_t size);
+
+} // namespace od
+

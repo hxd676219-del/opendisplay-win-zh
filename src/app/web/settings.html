@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenDisplay 设置</title>
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <!-- 顶部标题栏（无边框窗口的自定义标题栏，含窗口控制按钮） -->
+  <header class="titlebar" id="titlebar">
+    <div class="titlebar-left">
+      <span class="app-logo"></span>
+      <h1>OpenDisplay 设置</h1>
+    </div>
+    <div class="titlebar-right">
+      <span id="status-dot" class="status-dot status-idle"></span>
+      <span id="status-text" class="status-text">未连接</span>
+      <div class="window-controls">
+        <button id="win-min" class="win-btn" title="最小化" aria-label="最小化">&#x2013;</button>
+        <button id="win-max" class="win-btn" title="最大化/还原" aria-label="最大化/还原">&#x25A1;</button>
+        <button id="win-close" class="win-btn win-btn-close" title="关闭" aria-label="关闭">&#x2715;</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主体：左栏 + 右主区 -->
+  <div class="layout">
+    <!-- 左侧栏 -->
+    <aside class="sidebar">
+      <!-- 附近的 iPad -->
+      <section class="side-group">
+        <h2 class="side-title">附近的 iPad</h2>
+        <ul id="nearby-list" class="device-list"></ul>
+        <div class="side-actions">
+          <button id="refresh-nearby" class="btn">刷新</button>
+          <button id="add-nearby" class="btn btn-primary">添加 →</button>
+        </div>
+        <div id="nearby-hint" class="side-hint"></div>
+      </section>
+
+      <!-- 我的 iPad -->
+      <section class="side-group">
+        <h2 class="side-title">我的 iPad</h2>
+        <ul id="saved-list" class="device-list"></ul>
+        <div class="side-actions">
+          <button id="remove-saved" class="btn">移除</button>
+          <button id="move-back" class="btn btn-primary">← 移除</button>
+        </div>
+      </section>
+    </aside>
+
+    <!-- 右侧主区：滚动卡片分组 -->
+    <main class="content">
+      <!-- 外观 -->
+      <section class="card">
+        <h2 class="card-title">外观</h2>
+        <div class="field">
+          <label class="field-label" for="theme-select">界面主题</label>
+          <select id="theme-select" class="select">
+            <option value="system">跟随 Windows 设置</option>
+            <option value="light">浅色</option>
+            <option value="dark">深色</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- 连接 -->
+      <section class="card">
+        <h2 class="card-title">连接</h2>
+        <label class="switch-row">
+          <span class="switch-label">自动连接</span>
+          <input type="checkbox" id="auto-reconnect" class="switch" />
+          <span class="switch-slider"></span>
+        </label>
+        <label class="switch-row">
+          <span class="switch-label">Wi-Fi 断线自动续连</span>
+          <input type="checkbox" id="usb-wifi-failover" class="switch" />
+          <span class="switch-slider"></span>
+        </label>
+        <div class="switch-divider"></div>
+        <label class="switch-row">
+          <span class="switch-label">开机自启（管理员计划任务）</span>
+          <input type="checkbox" id="autostart" class="switch" />
+          <span class="switch-slider"></span>
+        </label>
+        <div class="field-hint" id="autostart-hint">需要管理员权限，切换时可能弹出 UAC 授权</div>
+      </section>
+
+      <!-- 画质 -->
+      <section class="card">
+        <h2 class="card-title">画质</h2>
+        <div class="field">
+          <label class="field-label" for="picture-preset">画质预设</label>
+          <select id="picture-preset" class="select">
+            <option value="speed">更快</option>
+            <option value="balanced">均衡</option>
+            <option value="quality">更清晰</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- 高级 -->
+      <section class="card">
+        <h2 class="card-title">高级</h2>
+
+        <div class="field">
+          <label class="field-label" for="manual-devices">手动添加地址（每行一个，可带昵称）</label>
+          <textarea id="manual-devices" class="textarea" rows="3"
+            placeholder="例：192.168.1.42 客厅 iPad"></textarea>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label" for="port">端口</label>
+            <input type="number" id="port" class="input" min="1" max="65535" value="9000" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="display-backend">显示驱动</label>
+            <select id="display-backend" class="select">
+              <option value="auto">自动</option>
+              <option value="mtt">MTT（1 台 iPad）</option>
+              <option value="parsec">Parsec（多台 iPad）</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="switch-row">
+          <span class="switch-label">USB 与 Wi-Fi 分别设置编码</span>
+          <input type="checkbox" id="separate-usb-wifi" class="switch" />
+          <span class="switch-slider"></span>
+        </label>
+
+        <div id="encode-panel" class="encode-panel">
+          <div class="encode-block">
+            <h3 class="encode-title">USB</h3>
+            <div class="field-row">
+              <div class="field">
+                <label class="field-label" for="usb-mode">模式</label>
+                <select id="usb-mode" class="select">
+                  <option value="dynamic">动态</option>
+                  <option value="fixed">固定</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="usb-preset">预设</label>
+                <select id="usb-preset" class="select">
+                  <option value="speed">快速</option>
+                  <option value="balanced">均衡</option>
+                  <option value="quality">高画质</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="encode-block">
+            <h3 class="encode-title">Wi-Fi</h3>
+            <div class="field-row">
+              <div class="field">
+                <label class="field-label" for="wifi-mode">模式</label>
+                <select id="wifi-mode" class="select">
+                  <option value="dynamic">动态</option>
+                  <option value="fixed">固定</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label" for="wifi-preset">预设</label>
+                <select id="wifi-preset" class="select">
+                  <option value="speed">快速</option>
+                  <option value="balanced">均衡</option>
+                  <option value="quality">高画质</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 底部按钮 -->
+  <footer class="footer">
+    <button id="cancel" class="btn">取消</button>
+    <button id="ok" class="btn btn-primary">确定</button>
+  </footer>
+
+  <script src="settings.js"></script>
+</body>
+</html>

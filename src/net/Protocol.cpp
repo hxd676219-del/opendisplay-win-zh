@@ -1,0 +1,305 @@
+#include "net/Protocol.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
+#include <string_view>
+#include <utility>
+
+namespace od {
+
+namespace {
+
+std::string_view AsView(const uint8_t* data, size_t size)
+{
+    return std::string_view(reinterpret_cast<const char*>(data), size);
+}
+
+// Finds "key" : <value-start> in a flat JSON object and returns the offset of
+// the first character of the value (after any whitespace). Returns npos if
+// the key isn't present.
+size_t FindValueStart(std::string_view json, std::string_view key)
+{
+    std::string needle = "\"" + std::string(key) + "\"";
+    size_t pos = json.find(needle);
+    if (pos == std::string_view::npos)
+        return std::string_view::npos;
+
+    pos += needle.size();
+    pos = json.find(':', pos);
+    if (pos == std::string_view::npos)
+        return std::string_view::npos;
+
+    ++pos;
+    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos])))
+        ++pos;
+
+    return pos;
+}
+
+std::optional<std::string> FindStringField(std::string_view json, std::string_view key)
+{
+    size_t start = FindValueStart(json, key);
+    if (start == std::string_view::npos || start >= json.size() || json[start] != '"')
+        return std::nullopt;
+
+    size_t end = json.find('"', start + 1);
+    if (end == std::string_view::npos)
+        return std::nullopt;
+
+    return std::string(json.substr(start + 1, end - start - 1));
+}
+
+std::optional<double> FindNumberField(std::string_view json, std::string_view key)
+{
+    size_t start = FindValueStart(json, key);
+    if (start == std::string_view::npos)
+        return std::nullopt;
+
+    size_t end = start;
+    while (end < json.size() &&
+           (std::isdigit(static_cast<unsigned char>(json[end])) || json[end] == '-' ||
+            json[end] == '+' || json[end] == '.' || json[end] == 'e' || json[end] == 'E'))
+        ++end;
+
+    if (end == start)
+        return std::nullopt;
+
+    return std::strtod(std::string(json.substr(start, end - start)).c_str(), nullptr);
+}
+
+std::optional<bool> FindBoolField(std::string_view json, std::string_view key)
+{
+    size_t start = FindValueStart(json, key);
+    if (start == std::string_view::npos)
+        return std::nullopt;
+
+    std::string_view rest = json.substr(start);
+    if (rest.starts_with("true"))
+        return true;
+    if (rest.starts_with("false"))
+        return false;
+
+    return std::nullopt;
+}
+
+TouchPhase ParseTouchPhase(const std::string& phase)
+{
+    if (phase == "began") return TouchPhase::Began;
+    if (phase == "moved") return TouchPhase::Moved;
+    if (phase == "ended") return TouchPhase::Ended;
+    if (phase == "cancelled") return TouchPhase::Cancelled;
+    return TouchPhase::Unknown;
+}
+
+PencilPhase ParsePencilPhase(const std::string& phase)
+{
+    if (phase == "hover") return PencilPhase::Hover;
+    if (phase == "down") return PencilPhase::Down;
+    if (phase == "move") return PencilPhase::Move;
+    if (phase == "up") return PencilPhase::Up;
+    return PencilPhase::Unknown;
+}
+
+uint32_t PositiveU32(std::optional<double> v)
+{
+    if (!v || !(*v > 0.0))
+        return 0;
+    return *v >= 4294967295.0 ? 0xFFFFFFFFu : static_cast<uint32_t>(*v);
+}
+
+// [begin, end) of the array value of "key", brackets included; npos if absent.
+std::pair<size_t, size_t> FindArray(std::string_view json, std::string_view key)
+{
+    size_t start = FindValueStart(json, key);
+    if (start == std::string_view::npos || start >= json.size() || json[start] != '[')
+        return {std::string_view::npos, std::string_view::npos};
+    int depth = 0;
+    bool inString = false;
+    for (size_t i = start; i < json.size(); ++i) {
+        const char ch = json[i];
+        if (inString) {
+            if (ch == '\\')
+                ++i;
+            else if (ch == '"')
+                inString = false;
+            continue;
+        }
+        if (ch == '"')
+            inString = true;
+        else if (ch == '[' || ch == '{')
+            ++depth;
+        else if ((ch == ']' || ch == '}') && --depth == 0)
+            return {start, i + 1};
+    }
+    return {std::string_view::npos, std::string_view::npos};
+}
+
+std::string WithoutArray(std::string_view json, std::string_view key)
+{
+    const auto [b, e] = FindArray(json, key);
+    if (b == std::string_view::npos)
+        return std::string(json);
+    return std::string(json.substr(0, b)) + "[]" + std::string(json.substr(e));
+}
+
+std::vector<VideoCapEntry> ParseVideoCaps(std::string_view json)
+{
+    std::vector<VideoCapEntry> out;
+    const auto [b, e] = FindArray(json, "videoCaps");
+    if (b == std::string_view::npos)
+        return out;
+    const std::string_view arr = json.substr(b + 1, e - b - 2);
+    int depth = 0;
+    bool inString = false;
+    size_t objStart = std::string_view::npos;
+    for (size_t i = 0; i < arr.size(); ++i) {
+        const char ch = arr[i];
+        if (inString) {
+            if (ch == '\\')
+                ++i;
+            else if (ch == '"')
+                inString = false;
+            continue;
+        }
+        if (ch == '"') {
+            inString = true;
+        } else if (ch == '{') {
+            if (depth++ == 0)
+                objStart = i;
+        } else if (ch == '}' && depth > 0 && --depth == 0 && objStart != std::string_view::npos) {
+            const std::string_view obj = arr.substr(objStart, i + 1 - objStart);
+            VideoCapEntry entry;
+            entry.codec = FindStringField(obj, "codec").value_or("");
+            for (char& c : entry.codec)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (entry.codec.empty())
+                continue; // codec is required
+            entry.maxWidth = PositiveU32(FindNumberField(obj, "maxWidth"));
+            entry.maxHeight = PositiveU32(FindNumberField(obj, "maxHeight"));
+            entry.maxFrameRate = PositiveU32(FindNumberField(obj, "maxFrameRate"));
+            const auto pps = FindNumberField(obj, "maxPixelsPerSecond");
+            entry.maxPixelsPerSecond = (pps && *pps > 0.0) ? static_cast<uint64_t>(*pps) : 0;
+            out.push_back(std::move(entry));
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+bool IsControlPayload(const uint8_t* data, size_t size)
+{
+    if (data == nullptr || size == 0 || size >= 32768)
+        return false;
+
+    if (data[0] != '{')
+        return false;
+
+    for (size_t i = 0; i < size; ++i) {
+        if (data[i] == 0x00)
+            return false;
+    }
+
+    return true;
+}
+
+std::optional<ControlMessage> ParseControlMessage(const uint8_t* data, size_t size)
+{
+    std::string_view json = AsView(data, size);
+
+    auto type = FindStringField(json, "type");
+    if (!type)
+        return std::nullopt;
+
+    ControlMessage msg;
+
+    if (*type == "hello") {
+        msg.type = ControlType::Hello;
+        msg.hello.pixelsWide = static_cast<int>(FindNumberField(json, "pixelsWide").value_or(0));
+        msg.hello.pixelsHigh = static_cast<int>(FindNumberField(json, "pixelsHigh").value_or(0));
+        msg.hello.scale = static_cast<int>(FindNumberField(json, "scale").value_or(1));
+        msg.hello.device = FindStringField(json, "device").value_or("");
+        msg.hello.id = FindStringField(json, "id").value_or("");
+        msg.hello.cursorPort = static_cast<int>(FindNumberField(json, "cursorPort").value_or(0));
+        msg.hello.videoCaps = ParseVideoCaps(json);
+        // Read from the hello with videoCaps cut out so a nested key can never
+        // be taken for a top-level one.
+        const std::string flat = WithoutArray(json, "videoCaps");
+        msg.hello.displayMaxFrameRate = PositiveU32(FindNumberField(flat, "displayMaxFrameRate"));
+    } else if (*type == "touch") {
+        msg.type = ControlType::Touch;
+        msg.touch.phase = ParseTouchPhase(FindStringField(json, "phase").value_or(""));
+        msg.touch.x = FindNumberField(json, "x").value_or(0.0);
+        msg.touch.y = FindNumberField(json, "y").value_or(0.0);
+        msg.touch.id = static_cast<uint32_t>(FindNumberField(json, "id").value_or(0.0));
+    } else if (*type == "scroll") {
+        msg.type = ControlType::Scroll;
+        msg.scroll.dx = FindNumberField(json, "dx").value_or(0.0);
+        msg.scroll.dy = FindNumberField(json, "dy").value_or(0.0);
+    } else if (*type == "pencil") {
+        msg.type = ControlType::Pencil;
+        msg.pencil.phase = ParsePencilPhase(FindStringField(json, "phase").value_or(""));
+        msg.pencil.x = FindNumberField(json, "x").value_or(0.0);
+        msg.pencil.y = FindNumberField(json, "y").value_or(0.0);
+        msg.pencil.pressure = FindNumberField(json, "pressure").value_or(0.0);
+        msg.pencil.azimuth = FindNumberField(json, "azimuth").value_or(0.0);
+        msg.pencil.altitude = FindNumberField(json, "altitude").value_or(kPencilAltitudeUpright);
+    } else if (*type == "proximity") {
+        msg.type = ControlType::Proximity;
+        msg.proximity.entering = FindBoolField(json, "entering").value_or(false);
+        msg.proximity.x = FindNumberField(json, "x").value_or(0.0);
+        msg.proximity.y = FindNumberField(json, "y").value_or(0.0);
+    } else if (*type == "kf") {
+        msg.type = ControlType::Kf;
+    } else if (*type == "cursorAck") {
+        msg.type = ControlType::CursorAck;
+    } else if (*type == "stats") {
+        msg.type = ControlType::Stats;
+    } else if (*type == "ping") {
+        msg.type = ControlType::Ping;
+        msg.ping.t = FindNumberField(json, "t").value_or(0.0);
+    } else {
+        msg.type = ControlType::Unknown; // e.g. sender ignores receiver "pong"
+    }
+
+    return msg;
+}
+
+} // namespace od
+
+
+namespace od {
+
+uint32_t StreamFpsLimit(const HelloMsg& hello, const char* codec, uint32_t width, uint32_t height)
+{
+    constexpr uint32_t kLegacyFps = 60;
+    constexpr uint32_t kNone = 0xFFFFFFFFu;
+    const uint32_t display = hello.displayMaxFrameRate ? hello.displayMaxFrameRate : kLegacyFps;
+
+    // Best envelope for this codec: among those whose raster fits, the one
+    // allowing the highest rate. If none fits, the most generous one anyway
+    // (the raster limit is the encoder's business, not the pacer's).
+    uint32_t bestFit = 0, bestAny = 0;
+    bool any = false, anyFit = false;
+    const uint64_t pixels = static_cast<uint64_t>(width) * height;
+    for (const VideoCapEntry& e : hello.videoCaps) {
+        if (e.codec != codec)
+            continue;
+        uint32_t rate = e.maxFrameRate ? e.maxFrameRate : kNone;
+        if (e.maxPixelsPerSecond && pixels)
+            rate = (std::min)(rate, static_cast<uint32_t>((std::min<uint64_t>)(e.maxPixelsPerSecond / pixels, kNone)));
+        const bool fits = (!e.maxWidth || width <= e.maxWidth) && (!e.maxHeight || height <= e.maxHeight);
+        any = true;
+        bestAny = (std::max)(bestAny, rate);
+        if (fits) {
+            anyFit = true;
+            bestFit = (std::max)(bestFit, rate);
+        }
+    }
+    const uint32_t caps = !any ? kNone : (anyFit ? bestFit : bestAny);
+    const uint32_t limit = (std::min)(display, caps);
+    return limit ? limit : 1;
+}
+
+} // namespace od

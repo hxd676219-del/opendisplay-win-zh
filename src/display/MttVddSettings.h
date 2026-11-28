@@ -1,0 +1,187 @@
+#pragma once
+
+#include <windows.h>
+
+#include <atomic>
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <vector>
+
+namespace od {
+
+// MTT Virtual Display Driver live config lives at
+// C:\VirtualDisplayDriver\{vdd_settings.xml,user_edid.bin}.
+// The mode list is generated per iPad from its hello size (MttModesForHello)
+// and written as user_edid.bin (CustomEdid=true, fixed MTT/0x1337/"ODW1"
+// identity so Windows keeps it the same monitor) plus mirrored XML
+// <resolutions> (stock MTT still feeds IddCx QueryTargetModes from XML).
+// Writing the live path + reloading MttVDD needs admin; the self-elevating
+// --ensure-mtt-edid WxH one-shot covers that, and only runs when the bytes
+// actually change. When no hello size is known, the EDID for the 11" default
+// size (2360x1640) is the fallback.
+
+struct MttMode {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t hz = 60;
+};
+
+struct MttEnsureResult {
+    bool ok = false;       // settings readable / modes present (or write+reload succeeded)
+    bool changed = false;  // XML and/or EDID was rewritten (reload ran)
+    int added = 0;         // number of <resolution> entries in the rewritten set
+    std::wstring path;     // live settings path used
+    std::string detail;    // short status for logging
+    bool reloadFailed = false; // files written but the MttVDD adapter did not restart cleanly
+};
+
+// Prefer C:\VirtualDisplayDriver\vdd_settings.xml when present.
+std::wstring FindLiveSettingsPath();
+
+// THE single source of MTT modes. Landscape (long side first), 16-px floor
+// aligned, @60 Hz, max 4 (EDID DTD slots): native hello size (preferred), the
+// closest-aspect sibling iPad panel (aspect within 1%, width within 8%), 3/4
+// and 1/2 of native. Invalid / >4095 sizes fall back to the 2360x1640 list.
+// Mirrored by tools/gen_user_edid.py modes_for_size (byte-identical EDID).
+std::vector<MttMode> MttModesForHello(uint32_t helloW, uint32_t helloH);
+
+// EDID 1.3 (128 bytes) for `modes`: fixed MTT / 0x1337 / serial "ODW1",
+// CVT-RB-ish DTD per mode (preferred first), physical size from the preferred
+// mode (~265 ppi), unused slots = monitor name / dummy, checksum. Empty on
+// invalid input.
+std::vector<uint8_t> BuildMttEdid(const std::vector<MttMode>& modes);
+
+// Fallback list when no hello size is known (= MttModesForHello(2360, 1640)).
+std::vector<MttMode> BakedMttModes();
+
+// Modes the driver currently offers (live XML <resolutions>, preferred first);
+// BakedMttModes when unreadable. Used to validate a saved mode.
+std::vector<MttMode> CurrentMttModes();
+
+// Install/refresh C:\VirtualDisplayDriver\user_edid.bin with the 11" default EDID,
+// set CustomEdid=true + PreventSpoof=true, mirror BakedMttModes into XML
+// <resolutions>, reload MttVDD. Idempotent when already current.
+MttEnsureResult EnsureCustomEdid();
+
+// Same for the EDID generated from a hello size. dryRun: report whether
+// anything differs (r.changed) without writing or reloading.
+MttEnsureResult EnsureCustomEdidForHello(uint32_t helloW, uint32_t helloH, bool dryRun);
+
+// Rewrite <resolutions> to the wanted set only (prune other aspects) without
+// touching gpu/options/monitors. Prefer EnsureCustomEdid for the sender path.
+// Needs admin to write the live path; returns ok=false with detail on denial.
+MttEnsureResult EnsureResolutions(const std::vector<MttMode>& wanted);
+
+// Sender entry, called before the MTT head attaches: generate the EDID for
+// this hello size; if bytes / flags / XML modes differ from what is installed,
+// show the one-time notice and self-elevate to write + reload MttVDD. No
+// change -> no UAC, no reload. UAC declined / failure -> log, keep the
+// installed EDID (11" default if none), return false; never blocks the
+// connection.
+// cancel (optional, e.g. the sender's stop flag) abandons an open UAC prompt /
+// running helper so Disconnect / Quit never hang; the helper is bounded and
+// finishes on its own. The helper's own log lines are copied into this log.
+bool EnsureMttResolutionsForHello(uint32_t helloW, uint32_t helloH, const std::string& logTag,
+                                  const std::atomic<bool>* cancel = nullptr);
+
+// After the head attaches: wait up to timeoutMs for the MTT head to offer the
+// preferred mode from vdd_settings.xml (EnumDisplaySettings). Logs
+// "mtt: verified ..." or "mtt: VERIFY FAILED ..." with what the driver offers
+// instead. Layouts are only saved to mtt_display.json while this has passed.
+bool VerifyMttModesOffered(const std::string& logTag, int timeoutMs);
+bool MttModesVerified();
+
+// Root\MttVDD adapter instance id (display class, present). False if the MTT
+// driver is not installed.
+bool FindMttAdapterInstanceId(std::wstring& instanceId);
+
+// Optional UI hook (tray balloon) shown right before an EDID-change UAC prompt.
+// Called on a sender thread; the callee must marshal to its UI thread.
+void SetMttUserNotifier(std::function<void(const std::wstring&)> fn);
+
+// Read <monitors><count> from live settings. Returns -1 if missing/unreadable.
+int ReadMonitorCount();
+
+// Write <monitors><count>N</count> and reload MttVDD. Idempotent when already N.
+// Needs admin to write the live path. The first rewrite keeps a .bak copy.
+MttEnsureResult SetMonitorCount(uint32_t count);
+
+// Ensure at least one MTT head is attached (set count>=1 + reload if needed).
+// Logs via Logf. Cancels any pending link-loss grace teardown.
+// Position policy: the saved layout is applied once per attachment - after a
+// fresh attach by us, or once when adopting a head that was already on the
+// desktop (previous run / reboot). When the head is already attached and was
+// positioned, this is a no-op for layout (ACCESS_LOST / rotate / resize
+// rebuilds must never move the monitor back). Refuses after BeginMttShutdown.
+// Only raises <count> 0 -> 1 (never lowers another tool's count). A head
+// attached here is marked as OpenDisplay's (mtt_head_owned.txt); only such a
+// head is ever detached by TearDown / Quit / the startup cleanup.
+bool EnsureMttVddAttached(const std::string& logTag, const std::atomic<bool>* cancel = nullptr);
+
+// Drop the MTT head via CDS detach - only if OpenDisplay attached it (a head
+// set up by another tool is left alone). Prefer RequestMttVddTeardown so
+// link-loss flaps keep the head sticky across USB<->Wi-Fi.
+bool TearDownMttVdd(const std::string& logTag);
+
+// How long after link loss (socket drop / transport flap) we keep the MTT head
+// attached waiting for a client hello. Cancelled by EnsureMttVddAttached.
+constexpr int kMttLinkLossGraceMs = 6000;
+
+enum class MttTeardownReason {
+    UserInitiated, // tray Disconnect / Exit / Stop / app quit
+    LinkLoss,      // socket drop, usbmux fail, transport switch, pipeline fail
+};
+
+// UserInitiated: cancel grace and TearDown now.
+// LinkLoss: start/restart the grace timer; TearDown only if it expires with
+// no intervening Ensure/Cancel (client did not return).
+// graceMs <= 0 uses kMttLinkLossGraceMs.
+void RequestMttVddTeardown(const std::string& logTag, MttTeardownReason reason, int graceMs = 0);
+
+// Cancel a pending link-loss grace teardown (client returned).
+void CancelPendingMttVddTeardown();
+
+// Persist the MTT head's current CCD position/mode under
+// %APPDATA%\opendisplay-win\mtt_display.json, keyed by MTT1337 identity (not
+// \\.\DISPLAYn). Logs "mtt: saved position (x,y) WxH@hz".
+// Only saves when the MTT head is attached AND active in the CCD topology with
+// a valid, non-cloned source mode; otherwise (inactive / "Show only on 1",
+// absent, mid-reconfigure) returns false and leaves the file untouched.
+bool SaveMttDisplayTopology(const std::string& logTag);
+
+// Same, but skipped within a short settle window after one of our own display
+// applies (see NoteSelfDisplayChange) so our applies are not treated as user
+// layout changes. Used by ACCESS_LOST and the tray's debounced WM_DISPLAYCHANGE.
+bool SaveMttDisplayTopologyIfUserChange(const std::string& logTag);
+
+// True when mtt_display.json has a usable width x height that the current
+// iPad's EDID offers (hz optional; 0 -> caller picks a default). A mode saved
+// for a different iPad size returns false so the caller uses the preferred
+// mode. Does not touch the desktop.
+bool QueryMttSavedMode(uint32_t& width, uint32_t& height, uint32_t& hz);
+
+// After CDS attach: find the MTT head by identity and reapply saved x,y and
+// mode (WxH@hz) when available. No-op when nothing saved yet. Logs
+// "mtt: restored position (x,y)" / "mtt: restoring saved mode WxH@hz".
+bool RestoreMttDisplayTopology(const std::string& logTag);
+
+// Milliseconds until a display change would no longer count as one of our own
+// applies (0 = now). The tray re-arms its WM_DISPLAYCHANGE debounce for this
+// long so a user change that lands inside the settle window is still saved.
+uint32_t MttTopologySaveDeferMs();
+
+// Quit / session end: stop any later EnsureMttVddAttached from re-attaching.
+void BeginMttShutdown();
+
+// Quit / WM_ENDSESSION / normal process exit: cancel grace, save layout (if
+// active), tear the MTT head down and persist the detached topology. Safe to
+// call repeatedly; implies BeginMttShutdown.
+bool ShutdownMttVddForExit(const std::string& logTag);
+
+// Tray startup: if an MTT head is already on the desktop (left over from a
+// previous run / reboot), adopt it - the first Ensure applies the saved layout
+// once - and arm a grace teardown so it does not linger without an iPad.
+void AdoptStaleMttHeadAtStartup(const std::string& logTag, int graceMs);
+
+} // namespace od

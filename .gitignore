@@ -1,0 +1,16 @@
+build/
+out/
+*.obj
+*.pdb
+*.ilk
+*.exe
+.vs/
+CMakeUserPresets.json
+__pycache__/
+*.pyc
+*.h264
+
+# 交付产物与运行时生成物（不提交），exe 走 GitHub Release 附件
+release/
+*.WebView2/
+*.user-profile/
